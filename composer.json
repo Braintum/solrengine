@@ -1,0 +1,23 @@
+{
+  "name": "mahedi/solrengine",
+  "description": "A Better Search for WordPress using Apache Solr",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "autoload": {
+    "psr-4": {
+      "SolrEngine\\": "src/"
+    }
+  },
+  "require": {
+    "php": ">=7.4",
+    "ext-curl": "*",
+    "solarium/solarium": "^6.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.0"
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "sort-packages": true
+  }
+}
