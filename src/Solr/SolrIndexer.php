@@ -60,9 +60,7 @@ class SolrIndexer implements IndexerInterface {
 			return false;
 		}
 		$doc  = $this->mapper->mapPost( $post );
-
 		$resp = $this->client->update( array( $doc ) );
-		print_r( $resp );exit;
 		return ( $resp['status'] >= 200 && $resp['status'] < 300 );
 	}
 

@@ -123,7 +123,7 @@ class SolariumClient implements SolrClientInterface {
 	 */
 	public function add_core_if_not_existing() {
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
-			WP_CLI::log( 'LOOP Search – Checking if solr core(index) "' . $this->prefixed_core . '" exists' );
+			\WP_CLI::log( 'LOOP Search – Checking if solr core(index) "' . $this->prefixed_core . '" exists' );
 		}
 
 		// Create a core admin query.
@@ -139,7 +139,7 @@ class SolariumClient implements SolrClientInterface {
 
 		if ( $status_result->getUptime() === 0 ) {
 			if ( defined( 'WP_CLI' ) && WP_CLI ) {
-				WP_CLI::log( 'LOOP Search – Creating solr core(index) "' . $this->prefixed_core . '"' );
+				\WP_CLI::log( 'LOOP Search – Creating solr core(index) "' . $this->prefixed_core . '"' );
 			}
 			$this->create_core();
 		}
@@ -161,7 +161,7 @@ class SolariumClient implements SolrClientInterface {
 
 		$response = $this->client->coreAdmin( $core_admin_query );
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
-			WP_CLI::log( 'LOOP Search – Solr core(index) "' . $this->prefixed_core . '" created' );
+			\WP_CLI::log( 'LOOP Search – Solr core(index) "' . $this->prefixed_core . '" created' );
 		}
 	}
 
