@@ -1961,8 +1961,8 @@ Each phase ends in something demonstrable. No phase is "refactoring".
 | Phase | Outcome | Key deliverables | Risk |
 | --- | --- | --- | --- |
 | **P0 — Foundation** ✅ | A skeleton that is empty but correct | Bootstrap with guards, contracts, container, config and secret storage, PHPCS/PHPStan/PHPUnit/Plugin Check in CI, `readme.txt`, i18n scaffolding | Low |
-| **P1 — Connection and schema** | Admin connects to Solr and sees an honest diagnosis | Endpoint validator, HTTP transport, auth, version and mode detection, connection test, schema contract v1, shipped configset, schema comparison and confirmed apply | Medium — §18.1, Solr version variance |
-| **P2 — Indexing** | Content reliably reaches Solr and stays correct | Document model, field map, meta allowlist, dirty-set coalescing, job queue, full sync with cursor and resume, incremental sync including deletes, failure handling, reconciliation, WP-CLI | **High — the hardest phase** |
+| **P1 — Connection and schema** ✅ | Admin connects to Solr and sees an honest diagnosis | Endpoint validator, HTTP transport, auth, version and mode detection, connection test, schema contract v1, shipped configset, schema comparison and confirmed apply | Medium — §18.1, Solr version variance |
+| **P2 — Indexing** ◐ | Content reliably reaches Solr and stays correct | Document model, field map, meta allowlist, dirty-set coalescing, job queue, full sync with cursor and resume, incremental sync including deletes, failure handling, reconciliation, WP-CLI | **High — the hardest phase** |
 | **P3 — Search** | WordPress search is Solr-powered, and safe when it is not | `QueryIntegration`, relevance profile, injection-safe query construction, fallback, REST `search` and `status`, admin dashboard | Medium |
 | **→ v1.0 to WordPress.org** | | Security review, Plugin Check clean, documentation, disclosure of external services | |
 | **P4 — Suggest and instant search** | Autocomplete in the theme's search box | Suggester configuration and scheduled build, `suggest` endpoint, accessible front-end component, caching | Medium — §19.4 |
@@ -2019,6 +2019,103 @@ Removing the exclusions immediately found one more defect. With `bin/` brought
 into scope, PHP_CodeSniffer flagged that `bin/check-version.php` used `$plugin`,
 a real WordPress global. Fixed. That is the argument for having no exempt paths
 stated as evidence rather than as principle.
+
+### 25.2 Phase 1 status — complete, 2026-09-19, shipped as 0.2.0
+
+An administrator can enter a Solr address, get an honest per-check diagnosis,
+see exactly which schema changes SolrEngine needs, and apply them on
+confirmation. Gates: 87 unit tests, coding standards, static analysis and
+version consistency all pass.
+
+| Deliverable | State |
+| --- | --- |
+| Endpoint validator | Done. 43 dedicated security tests |
+| HTTP transport | Done. No redirects, capped bodies, JSON only, classified failures |
+| Basic authentication | Done. Constants preferred over stored credentials |
+| Version and mode detection | Done, memoised per request |
+| Connection diagnostic | Done. Eight independent checks, shared by admin and CLI |
+| Schema contract v1 | Done. 13 dynamic patterns, 3 concrete fields, 6 copy rules |
+| Schema planner | Done. Additive only, `se_` only, pure and unit tested |
+| Schema apply | Done, gated twice on being additive |
+| Schema export | Done. The fallback for a Solr we may not modify |
+| Shipped configset | Done, generated from the same contract |
+| Connection admin screen | Done |
+| WP-CLI `test`, `status`, `schema` | Done |
+| Documentation | `docs/security.md`, `docs/solr.md` |
+
+**The phase found a design error in the plan before it reached any code that
+mattered.** Section 10.1 specified fields as `se_title_txt`, which implies
+dynamic patterns like `se_*_txt` with the wildcard in the middle. Solr's
+copy-fields documentation states that source and destination "can contain
+either leading or trailing asterisks", so the entire naming scheme was
+unimplementable. The type marker moved to the front — `se_txt_title`,
+pattern `se_txt_*` — and a second constraint surfaced alongside it: copy chains
+are prohibited, so the taxonomy aggregate declares the same source twice
+instead of chaining. Both are recorded in the Phase 1 addendum to ADR-002, and
+both are now guarded by unit tests that validate the shipped contract against
+Solr's rules.
+
+**Three more defects were caught by tooling rather than by review.** PHPStan
+found `add_option()` being passed a string where a boolean belongs. The
+endpoint tests found that PHP's `FILTER_FLAG_NO_RES_RANGE` does not cover
+multicast, so `224.0.0.1` would have been classified as a public address. The
+same tests found that collection names were being sanitised rather than
+rejected, so `../../admin/collections` became `....admincollections` — a
+valid-looking name that does not exist, which would have produced a confusing
+"collection not found" rather than a clear error.
+
+**Not done, deliberately.** No REST endpoints yet: the admin screen uses
+`admin-post.php`, and a public REST surface belongs with search in Phase 3
+where the parameter-allowlisting rules in §16.2 can be built in from the start
+rather than retrofitted. No integration or backend test suites are populated
+yet; both directories and the CI jobs that drive them exist, and Docker was not
+available in this environment to verify against a live Solr.
+
+### 25.3 Phase 2 status — mostly complete, 2026-09-19, shipped as 0.3.0
+
+Content now reaches Solr and stays correct. 135 unit tests and 14 backend tests
+against a real Solr 10 pass, alongside coding standards, static analysis and the
+version check.
+
+| Deliverable | State |
+| --- | --- |
+| Document model and field map | Done, verified against real Solr |
+| Value coercion | Done. A bad value drops one field rather than failing a document |
+| Meta allowlist | Done, with field-collision detection |
+| Dirty-set coalescing | Done. Many hooks per post become one job |
+| Hook listeners | Done, including deletes, trash, untrash and status transitions |
+| Job queue | Done. Action Scheduler driver plus a WP-Cron fallback, both behind the contract |
+| Batch writes and selector deletes | Done, with `commitWithin` rather than per-document commits |
+| Failure isolation | Done. A rejected batch retries one document at a time |
+| Full sync | Done. ID cursor, resumable, cancellable, adaptive batch size |
+| WP-CLI `index` | Done, with `resume`, `cancel` and `progress` |
+| Reconciliation | **Not done.** See below |
+| Admin indexing screen | **Not done.** CLI only for now |
+
+**Phase 1's schema decision is now verified rather than reasoned.** Docker was
+available for this phase, so the contract was applied to a real Solr 10 and the
+naming correction was confirmed empirically. Solr's own message on the original
+scheme: *"Dynamic field name 'se_*_txt' should have either a leading or a
+trailing asterisk, and no others."* Both that and the copyField equivalent are
+now permanent regression tests, so if a future change reintroduces a mid-name
+wildcard, a test fails rather than a customer's first schema call.
+
+A third finding came out of the same session and corrected a plan assumption:
+**Solr accepts a copyField chain rather than rejecting it.** The documentation
+says "no copy feeds into another copy", and the practical consequence is worse
+than a rejection would be — the rule is declared successfully and silently does
+nothing at index time. The contract avoids chains, and the unit tests enforce
+that, but the plan's wording implied Solr would stop you. It will not.
+
+**Two pieces are deliberately unfinished.** Reconciliation (F-27) detects drift
+between WordPress and the index, and it is most valuable once search is live and
+a stale index is visible to users, so it moves to Phase 3. An admin indexing
+screen is the other; the CLI covers the operator case that matters now, and the
+screen belongs with the dashboard work already scheduled for Phase 3.
+
+**Action Scheduler is now a real dependency**, at 764 KB and GPL-3.0-or-later.
+The combined distributed package is therefore effectively GPLv3, which ADR-004
+anticipated and readme.txt now discloses.
 
 Ordering rationale worth recording: **P5 precedes P6 deliberately.** WooCommerce filtering is the
 strongest commercial signal (§6, Dana), but it is built out of generic faceting. Building facets

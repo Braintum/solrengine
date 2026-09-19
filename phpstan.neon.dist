@@ -9,6 +9,18 @@ parameters:
         - uninstall.php
         - src
 
+    scanFiles:
+        # WP-CLI is optional at runtime, so its classes are not autoloadable
+        # during analysis. The stubs also mark WP_CLI::error() as never
+        # returning, which lets narrowing after an error() call work.
+        - vendor/php-stubs/wp-cli-stubs/wp-cli-stubs.php
+        - vendor/php-stubs/wp-cli-stubs/wp-cli-commands-stubs.php
+        - vendor/php-stubs/wp-cli-stubs/wp-cli-i18n-stubs.php
+        # Action Scheduler declares its API functions inside a conditional
+        # loader, so they are not autoloadable for analysis.
+        - vendor/woocommerce/action-scheduler/functions.php
+        - vendor/woocommerce/action-scheduler/deprecated/functions.php
+
     bootstrapFiles:
         - tests/phpstan-bootstrap.php
 

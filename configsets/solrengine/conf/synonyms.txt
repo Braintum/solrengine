@@ -1,0 +1,1 @@
+# Synonyms, one group per line. See the Solr reference guide.

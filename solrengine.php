@@ -3,7 +3,7 @@
  * Plugin Name:       SolrEngine
  * Plugin URI:        https://www.solrengine.com
  * Description:       Apache Solr powered search for WordPress. Faster, more relevant results, with WordPress search as an automatic fallback.
- * Version:           0.1.0
+ * Version:           0.3.0
  * Requires at least: 6.5
  * Requires PHP:      7.4
  * Author:            SolrEngine
@@ -39,7 +39,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SOLRENGINE_VERSION', '0.1.0' );
+define( 'SOLRENGINE_VERSION', '0.3.0' );
 define( 'SOLRENGINE_PLUGIN_FILE', __FILE__ );
 define( 'SOLRENGINE_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SOLRENGINE_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -142,6 +142,19 @@ function solrengine_boot() {
 	}
 
 	require_once SOLRENGINE_PLUGIN_DIR . 'vendor/autoload.php';
+
+	/*
+	 * Action Scheduler registers itself through a version negotiation, so the
+	 * copy that ends up running may belong to another plugin. Requiring our
+	 * bundled copy adds it to that negotiation; it does not force it to win.
+	 * Guarded because a broken or partial copy must not fatal the site: the
+	 * queue reports itself unavailable and SolrEngine falls back to WP-Cron.
+	 */
+	$solrengine_scheduler = SOLRENGINE_PLUGIN_DIR . 'vendor/woocommerce/action-scheduler/action-scheduler.php';
+
+	if ( is_readable( $solrengine_scheduler ) ) {
+		require_once $solrengine_scheduler;
+	}
 
 	\SolrEngine\Bootstrap::instance()->boot();
 }

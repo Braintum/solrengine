@@ -71,3 +71,66 @@ The ID scheme is the highest-leverage, lowest-cost decision in the plan: it cost
 concatenation now and prevents three classes of unrecoverable data corruption later. The `se_`
 namespace is what makes ADR-003's hybrid schema strategy safe — without it, "only touch fields we
 own" is not an expressible rule.
+
+---
+
+## Addendum, 2026-09-19 — field naming corrected during Phase 1
+
+**Status:** Accepted. Supersedes the `se_{name}_{suffix}` scheme in the original
+decision and in plan section 10.1.
+
+### What was wrong
+
+The original scheme put the type suffix last: `se_title_txt`, `se_meta_price_f`,
+`se_tax_category_ss`. The matching dynamic field patterns would therefore have
+had to be `se_*_txt`, `se_*_f`, `se_*_ss` — with the wildcard in the **middle**.
+
+Solr does not support that. The copy-fields documentation is explicit: "Both the
+source and the destination of `copyField` can contain either leading or trailing
+asterisks, which will match anything." A mid-name wildcard is not a leading or
+trailing asterisk, so neither the copyField rules nor the dynamic field patterns
+the scheme depends on could have been created.
+
+This was found while writing the Phase 1 schema contract, before any of it
+reached a Solr server. It would otherwise have surfaced as the very first
+`add-dynamic-field` call failing against every customer's Solr.
+
+### The corrected scheme
+
+The type marker moves to the front, immediately after the namespace, so every
+pattern is a **trailing** wildcard:
+
+| Pattern | Solr type | Purpose |
+| --- | --- | --- |
+| `se_txt_*` | text_general | Analysed text, single valued |
+| `se_txts_*` | text_general | Analysed text, multi valued |
+| `se_s_*` | string | Exact match, sorting, faceting |
+| `se_ss_*` | string, multi | Faceting |
+| `se_i_*` / `se_is_*` | pint | Integers |
+| `se_l_*` / `se_ls_*` | plong | Longs |
+| `se_f_*` / `se_d_*` | pfloat / pdouble | Decimals |
+| `se_b_*` | boolean | Flags |
+| `se_dt_*` / `se_dts_*` | pdate | Timestamps |
+
+So `se_title_txt` becomes `se_txt_title`, `se_meta_price_f` becomes
+`se_f_meta_price`, and `se_tax_category_ss` becomes `se_ss_tax_category`.
+
+### Consequences
+
+**Everything the original decision bought is preserved.** The `se_` namespace
+still marks ownership, arbitrary metadata still needs no schema change, and the
+patterns are still identifiable as a set for migration.
+
+**Readability changes, slightly for the worse.** `se_txt_title` reads less
+naturally than `se_title_txt`. That is the cost of a constraint Solr imposes,
+and it is small.
+
+**A second constraint was found at the same time and designed around.** The
+documentation states that "no copy feeds into another copy", so copyField chains
+are prohibited. The taxonomy aggregate therefore cannot be built by copying
+taxonomy fields into `se_taxterms` and then copying that into `se_all`. Both
+copies are declared from the same source instead, which the same page permits:
+"the same source field can be copied to multiple destination fields".
+
+**The document ID format is unchanged.** `se:{site_id}:{object_type}:{object_id}`
+was never affected, and `DocumentRef` needed no modification.

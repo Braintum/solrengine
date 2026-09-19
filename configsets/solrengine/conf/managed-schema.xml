@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SolrEngine managed schema.
+
+  GENERATED FILE. The field definitions below come from
+  SolrEngine\Schema\ContractRegistry, which is the same source that drives the
+  Schema API plan and the export shown in wp-admin. Regenerate with:
+
+      wp solrengine schema export
+
+  Editing this by hand is fine for your own additions, but changes to the "se_"
+  fields will be reported as drift by the connection diagnostic.
+
+  Licensed under the Apache License, Version 2.0, matching Apache Solr's own
+  example configsets from which the field types below are taken.
+-->
+<schema name="solrengine" version="1.6">
+
+  <uniqueKey>id</uniqueKey>
+
+  <!-- Required by Solr itself. -->
+  <field name="id" type="string" indexed="true" stored="true" required="true" multiValued="false"/>
+  <field name="_version_" type="plong" indexed="false" stored="false"/>
+
+  <!-- =====================================================================
+       Field types. Standard definitions from Solr's default configset,
+       reproduced here so a collection created from this configset needs
+       nothing else.
+       ===================================================================== -->
+
+  <fieldType name="string" class="solr.StrField" sortMissingLast="true" docValues="true"/>
+  <fieldType name="boolean" class="solr.BoolField" sortMissingLast="true"/>
+  <fieldType name="pint" class="solr.IntPointField" docValues="true"/>
+  <fieldType name="plong" class="solr.LongPointField" docValues="true"/>
+  <fieldType name="pfloat" class="solr.FloatPointField" docValues="true"/>
+  <fieldType name="pdouble" class="solr.DoublePointField" docValues="true"/>
+  <fieldType name="pdate" class="solr.DatePointField" docValues="true"/>
+
+  <fieldType name="text_general" class="solr.TextField" positionIncrementGap="100" multiValued="true">
+    <analyzer type="index">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.StopFilterFactory" ignoreCase="true" words="stopwords.txt"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+    <analyzer type="query">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.StopFilterFactory" ignoreCase="true" words="stopwords.txt"/>
+      <filter class="solr.SynonymGraphFilterFactory" synonyms="synonyms.txt" ignoreCase="true" expand="true"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+  </fieldType>
+
+  <!-- =====================================================================
+       SolrEngine fields.
+       ===================================================================== -->
+
+  <!--
+    SolrEngine schema contract version 1.
+  
+    Paste these into your managed-schema or schema.xml, inside <schema>.
+    Every name is prefixed "se_" so nothing here can collide with fields
+    belonging to another application in the same collection.
+  
+    Field types used (string, text_general, pint, plong, pfloat, pdouble,
+    pdate, boolean) are all present in Solr's default configset. If yours
+    lacks any of them, define them before adding these fields.
+  -->
+  
+  <!-- Dynamic patterns. These carry arbitrary WordPress metadata, so
+       indexing a new custom field needs no schema change at all. -->
+  <dynamicField name="se_txt_*" type="text_general" indexed="true" stored="true"/>
+  <dynamicField name="se_txts_*" type="text_general" indexed="true" stored="true" multiValued="true"/>
+  <dynamicField name="se_s_*" type="string" indexed="true" stored="true" docValues="true"/>
+  <dynamicField name="se_ss_*" type="string" indexed="true" stored="true" multiValued="true" docValues="true"/>
+  <dynamicField name="se_i_*" type="pint" indexed="true" stored="true" docValues="true"/>
+  <dynamicField name="se_is_*" type="pint" indexed="true" stored="true" multiValued="true" docValues="true"/>
+  <dynamicField name="se_l_*" type="plong" indexed="true" stored="true" docValues="true"/>
+  <dynamicField name="se_ls_*" type="plong" indexed="true" stored="true" multiValued="true" docValues="true"/>
+  <dynamicField name="se_f_*" type="pfloat" indexed="true" stored="true" docValues="true"/>
+  <dynamicField name="se_d_*" type="pdouble" indexed="true" stored="true" docValues="true"/>
+  <dynamicField name="se_b_*" type="boolean" indexed="true" stored="true" docValues="true"/>
+  <dynamicField name="se_dt_*" type="pdate" indexed="true" stored="true" docValues="true"/>
+  <dynamicField name="se_dts_*" type="pdate" indexed="true" stored="true" multiValued="true" docValues="true"/>
+  
+  <!-- Concrete fields. -->
+  <field name="se_all" type="text_general" indexed="true" stored="false" multiValued="true"/>
+  <field name="se_taxterms" type="text_general" indexed="true" stored="false" multiValued="true"/>
+  <field name="se_suggest" type="text_general" indexed="true" stored="true" multiValued="true"/>
+  
+  <!-- Copy rules. Note that none chains into another: Solr states that
+       "no copy feeds into another copy", so the taxonomy source is
+       declared twice rather than copied onward. -->
+  <copyField source="se_txt_title" dest="se_all"/>
+  <copyField source="se_txt_excerpt" dest="se_all"/>
+  <copyField source="se_txt_content" dest="se_all"/>
+  <copyField source="se_ss_tax_*" dest="se_all"/>
+  <copyField source="se_ss_tax_*" dest="se_taxterms"/>
+  <copyField source="se_txt_title" dest="se_suggest"/>
+
+</schema>

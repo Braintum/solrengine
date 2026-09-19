@@ -49,15 +49,56 @@ interface SchemaBackend {
 	 */
 	public function applied_version(): Result;
 
-	/*
-	 * Arriving in Phase 1, once the contract representation is settled:
+	/**
+	 * Read the live schema.
 	 *
-	 *   describe(): Result                          // value: SchemaState
-	 *   plan( SchemaContract $contract ): Result    // value: SchemaPlan
-	 *   apply( SchemaPlan $plan ): Result
+	 * @since 0.1.0
 	 *
-	 * plan() and apply() are separate on purpose. A single apply() that decided
-	 * for itself what to change would make the administrator's confirmation
-	 * impossible to obtain, since there would be nothing to show them.
+	 * @return Result Success carrying a SchemaState, or a failure.
 	 */
+	public function describe(): Result;
+
+	/**
+	 * Work out what would have to change to satisfy a contract.
+	 *
+	 * Produces a plan without changing anything. Separate from apply() on
+	 * purpose: a single method that decided for itself what to change would
+	 * leave nothing to show an administrator, and consent would be impossible
+	 * to obtain.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param SchemaContract $contract Contract to satisfy.
+	 * @return Result Success carrying a SchemaPlan, or a failure.
+	 */
+	public function plan( SchemaContract $contract ): Result;
+
+	/**
+	 * Apply a plan.
+	 *
+	 * Implementations must reject any plan containing a command outside the
+	 * additive set, must stop at the first failure rather than continuing, and
+	 * must record the contract version they reached.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param SchemaPlan $plan Plan produced by plan().
+	 * @return Result Success carrying the number of operations applied, or a
+	 *                failure naming the operation that stopped it.
+	 */
+	public function apply( SchemaPlan $plan ): Result;
+
+	/**
+	 * The schema as configuration an administrator can apply by hand.
+	 *
+	 * The fallback path for a Solr that SolrEngine cannot or should not modify:
+	 * a managed service, a locked-down cluster, or credentials without
+	 * authorisation. Without this, those customers have no route at all.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param SchemaContract $contract Contract to render.
+	 * @return string XML fragment suitable for a managed-schema file.
+	 */
+	public function export( SchemaContract $contract ): string;
 }

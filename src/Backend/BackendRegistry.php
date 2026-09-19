@@ -8,6 +8,7 @@
 namespace SolrEngine\Backend;
 
 use SolrEngine\Contracts\IndexBackend;
+use SolrEngine\Contracts\SchemaBackend;
 use SolrEngine\Contracts\SearchBackend;
 use SolrEngine\Support\Config;
 
@@ -173,6 +174,31 @@ final class BackendRegistry {
 		$instance = $this->resolve( 'index', $id, $this->index_factories );
 
 		return $instance instanceof IndexBackend ? $instance : null;
+	}
+
+	/**
+	 * The selected schema backend, or null when it does not manage schemas.
+	 *
+	 * Separate from search() and index() because schema management is the one
+	 * capability a backend may legitimately not have: a managed service owns
+	 * its own schema, and a locked-down Solr will not permit changes. Callers
+	 * that need it must handle null rather than assuming the search backend
+	 * also implements it.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @return SchemaBackend|null
+	 */
+	public function schema(): ?SchemaBackend {
+		$id = $this->selected_id();
+
+		if ( '' === $id ) {
+			return null;
+		}
+
+		$instance = $this->resolve( 'search', $id, $this->search_factories );
+
+		return $instance instanceof SchemaBackend ? $instance : null;
 	}
 
 	/**

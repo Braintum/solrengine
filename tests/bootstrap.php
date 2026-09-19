@@ -14,6 +14,9 @@ declare( strict_types=1 );
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 
 define( 'SOLRENGINE_TESTING', true );
+define( 'SOLRENGINE_SCHEMA_CONTRACT_VERSION', 1 );
+
+require_once __DIR__ . '/wp-shims.php';
 
 /*
  * The integration and backend suites need the WordPress test library. It is
@@ -22,7 +25,14 @@ define( 'SOLRENGINE_TESTING', true );
  */
 $solrengine_suite = getenv( 'SOLRENGINE_TEST_SUITE' );
 
-if ( in_array( $solrengine_suite, array( 'integration', 'backend' ), true ) ) {
+/*
+ * The backend suite talks to a real Solr but needs no WordPress: schema
+ * conformance is a property of the contract and the server, and loading
+ * WordPress to check it would make the suite slower and harder to run without
+ * proving anything more. Indexing tests, which do need WordPress, will live in
+ * the integration suite alongside a Solr.
+ */
+if ( in_array( $solrengine_suite, array( 'integration' ), true ) ) {
 	$solrengine_wp_tests = getenv( 'WP_TESTS_DIR' );
 
 	if ( ! is_string( $solrengine_wp_tests ) || '' === $solrengine_wp_tests ) {

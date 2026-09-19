@@ -4,7 +4,7 @@ Tags: search, solr, relevance, faceted search, woocommerce
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 0.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -26,10 +26,9 @@ error.
 
 = Status =
 
-This is an early development release. It establishes the plugin's foundation:
-structure, security model, coding standards and test tooling. Connecting to
-Solr, indexing and search arrive in the releases that follow. See the roadmap
-link below before installing on a production site.
+This is an early development release. It can connect to your Solr server, set
+up the schema it needs, and index your content. Search itself arrives in the
+next release, so the index is built but not yet used to answer queries.
 
 = Requirements =
 
@@ -65,6 +64,13 @@ SolrEngine contacts **one** external service, and only the one you configure.
 SolrEngine sends **no** analytics, telemetry, usage statistics, licence checks
 or error reports anywhere. It does not contact solrengine.com or any other
 server operated by us.
+
+== Bundled libraries ==
+
+SolrEngine bundles Action Scheduler (https://actionscheduler.org/), which runs
+indexing in the background. It is licensed GPL-3.0-or-later. SolrEngine's own
+code is GPLv2 or later, and because the two are distributed together the
+combined package is effectively GPLv3. Both licences are GPL-compatible.
 
 By default SolrEngine indexes only content that is already publicly visible.
 Drafts, private posts, trashed content, and the contents of password-protected
@@ -139,6 +145,40 @@ It can be used per site. Network-level configuration is planned.
 
 == Changelog ==
 
+= 0.3.0 =
+* Index posts, pages and custom post types, with taxonomy terms, hierarchy,
+  authors, dates and featured images.
+* Index custom fields you choose. Nothing is indexed unless you list the key
+  and say what type it holds.
+* Content changes reach the index automatically: creating, editing, trashing,
+  restoring, deleting, and publishing a scheduled post.
+* Indexing never slows down saving. Everything happens in a background job, so
+  a slow or unreachable Solr cannot make the editor wait.
+* Many changes to one post become one indexing job, so a bulk edit does not
+  flood the queue.
+* Full synchronisation is resumable. Interrupt it, restart the server, or hit a
+  timeout, and it continues from where it stopped rather than starting again.
+* Batch sizes adapt to how much time and memory each batch actually used.
+* A document Solr rejects no longer takes the rest of its batch with it.
+* Uses Action Scheduler when available, WP-Cron otherwise.
+* WP-CLI: `wp solrengine index`, with `resume`, `cancel` and `progress`.
+
+= 0.2.0 =
+* Connect to Apache Solr, with a diagnosis that reports each check separately
+  so every failure points at its own remedy.
+* Detects the Solr version and whether you are running SolrCloud or a single
+  node, and adapts rather than assuming.
+* Schema management: see exactly which fields SolrEngine needs, and add them
+  with one confirmation. Only ever adds fields, only ever ones prefixed "se_",
+  and never replaces or deletes anything.
+* A shipped Solr configset for new collections, and a copy-and-paste export for
+  servers SolrEngine cannot modify.
+* HTTP Basic authentication, with credentials preferably set in wp-config.php.
+* Address validation that blocks cloud metadata services and link-local
+  addresses outright, and requires explicit confirmation before connecting to
+  anything on a private network.
+* WP-CLI: `wp solrengine test`, `wp solrengine status`, `wp solrengine schema`.
+
 = 0.1.0 =
 * Initial development release.
 * Plugin foundation: bootstrap with PHP and WordPress requirement checks that
@@ -149,5 +189,6 @@ It can be used per site. Network-level configuration is planned.
 
 == Upgrade Notice ==
 
-= 0.1.0 =
-First development release. Not yet suitable for production sites.
+= 0.3.0 =
+Adds content indexing. Still a development release: nothing searches the index
+yet, so it is not suitable for production sites.

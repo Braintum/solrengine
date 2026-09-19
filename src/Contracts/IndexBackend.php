@@ -54,15 +54,38 @@ interface IndexBackend {
 	 */
 	public function delete( array $refs ): Result;
 
-	/*
-	 * Arriving in later phases:
+	/**
+	 * Write documents.
 	 *
-	 *   Phase 2: write_batch( Document[] $documents ): Result // value: WriteResult
-	 *   Phase 2: delete_by_selector( Selector $selector ): Result
+	 * Deliberately the only write method. There is no write_one(): a
+	 * single-document path gets used by accident inside loops, and that is how
+	 * the 0.1.0 prototype ended up committing once per post. Callers with one
+	 * document pass an array of one.
 	 *
-	 * write_batch is deliberately the only write method. There is no
-	 * write_one(): a single-document path would be used by accident in loops
-	 * and would reintroduce the per-document commit that made the prototype
-	 * slow. Callers with one document pass an array of one.
+	 * Writes are upserts keyed on DocumentRef::document_id(), so reindexing is
+	 * idempotent and a replayed job costs time rather than correctness.
+	 *
+	 * Implementations must not commit per document. Visibility is arranged
+	 * through a commit window so that Solr batches the work.
+	 *
+	 * @since 0.3.0
+	 *
+	 * @param Document[] $documents Documents to write.
+	 * @return Result Success carrying a WriteResult, which may report partial
+	 *                failure, or a failure when the whole batch was refused.
 	 */
+	public function write_batch( array $documents ): Result;
+
+	/**
+	 * Remove every document matching a selector.
+	 *
+	 * The way a site's documents are removed without enumerating a million
+	 * identifiers. Implementations must refuse an unconstrained selector.
+	 *
+	 * @since 0.3.0
+	 *
+	 * @param Selector $selector Which documents to remove.
+	 * @return Result Success carrying a WriteResult, or a failure.
+	 */
+	public function delete_by_selector( Selector $selector ): Result;
 }
