@@ -168,7 +168,7 @@ final class HttpTransport {
 
 		// Solr 10 removed the PHP response writer, and JSON is the only format
 		// worth parsing anyway. Never request anything else.
-		$url .= ( false === strpos( $url, '?' ) ? '?' : '&' ) . http_build_query( $query );
+		$url .= ( false === strpos( $url, '?' ) ? '?' : '&' ) . self::build_query( $query );
 
 		$args = array(
 			'method'      => $method,
@@ -358,5 +358,56 @@ final class HttpTransport {
 		$token = base64_encode( $this->credentials->username() . ':' . $password->value( '' ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
 
 		return 'Basic ' . $token;
+	}
+
+	/**
+	 * Build a query string Solr understands.
+	 *
+	 * Solr expresses repeated parameters by repeating the key: two filter
+	 * queries are two "fq=" pairs. PHP's http_build_query() instead produces
+	 * "fq[0]=" and "fq[1]=", which Solr does not recognise as fq at all.
+	 *
+	 * That is not a cosmetic difference. The filters SolrEngine adds include
+	 * the site scope and the public-visibility restriction, so encoding them
+	 * the wrong way means they are silently ignored — the query runs, returns
+	 * results, and quietly has no security filtering on it. Caught by testing
+	 * against a real Solr rather than by reading the code.
+	 *
+	 * @param array<string,mixed> $params Parameters, values may be arrays.
+	 * @return string
+	 */
+	private static function build_query( array $params ): string {
+		$pairs = array();
+
+		foreach ( $params as $key => $value ) {
+			if ( is_array( $value ) ) {
+				foreach ( $value as $item ) {
+					$pairs[] = rawurlencode( (string) $key ) . '=' . rawurlencode( self::stringify( $item ) );
+				}
+
+				continue;
+			}
+
+			$pairs[] = rawurlencode( (string) $key ) . '=' . rawurlencode( self::stringify( $value ) );
+		}
+
+		return implode( '&', $pairs );
+	}
+
+	/**
+	 * Render a scalar the way Solr expects it.
+	 *
+	 * Booleans in particular: PHP casts false to an empty string, which Solr
+	 * reads as a missing value rather than as false.
+	 *
+	 * @param mixed $value Value to render.
+	 * @return string
+	 */
+	private static function stringify( $value ): string {
+		if ( is_bool( $value ) ) {
+			return $value ? 'true' : 'false';
+		}
+
+		return is_scalar( $value ) ? (string) $value : '';
 	}
 }

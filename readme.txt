@@ -4,7 +4,7 @@ Tags: search, solr, relevance, faceted search, woocommerce
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.3.0
+Stable tag: 0.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -26,9 +26,9 @@ error.
 
 = Status =
 
-This is an early development release. It can connect to your Solr server, set
-up the schema it needs, and index your content. Search itself arrives in the
-next release, so the index is built but not yet used to answer queries.
+SolrEngine now does the whole job: connect, index, and answer searches. It is
+still a development release and has not been through a full security review, so
+treat a production site with care.
 
 = Requirements =
 
@@ -135,6 +135,18 @@ Only the ones you list. Post meta is never indexed automatically, because meta
 frequently holds internal notes, API keys and personal data that has no business
 in a search index.
 
+= What happens if a search finds nothing? =
+
+SolrEngine retries with typo tolerance, then with looser matching, before
+reporting no results. The response says which of those produced the results, so
+a theme can tell visitors when it is showing approximate matches.
+
+= Can I use the search API from my own front end? =
+
+Yes. There is a REST endpoint at `/wp-json/solrengine/v1/search`. It accepts
+search text, pagination, a sort key from a fixed list, and named filters. It
+does not accept raw query syntax, deliberately.
+
 = Does it support WooCommerce? =
 
 Not yet. WooCommerce product indexing and filtering are planned.
@@ -144,6 +156,26 @@ Not yet. WooCommerce product indexing and filtering are planned.
 It can be used per site. Network-level configuration is planned.
 
 == Changelog ==
+
+= 0.4.0 =
+* WordPress search is now answered by Solr, with relevance ranking, field
+  weighting and phrase matching.
+* Your theme needs no changes. Results are substituted into WordPress's own
+  query, so classic themes, block themes and page builders keep working.
+* If Solr is unreachable or slow, WordPress answers the search itself. Visitors
+  see ordinary results, not an error.
+* After a few failures in a row SolrEngine stops trying for a minute, so an
+  outage does not make every visitor wait for a timeout.
+* A search that finds nothing is retried with typo tolerance, and then with
+  looser matching, before reporting no results.
+* REST endpoints: a public search endpoint and an administrator status
+  endpoint. The search endpoint accepts only named filters and sorts, never raw
+  query syntax.
+* An admin dashboard reporting connection, index, queue and accuracy, including
+  states that would otherwise fail silently.
+* Index accuracy checking, which compares what WordPress holds against what the
+  index holds and reports drift.
+* Results can be cached for anonymous visitors.
 
 = 0.3.0 =
 * Index posts, pages and custom post types, with taxonomy terms, hierarchy,
@@ -189,6 +221,6 @@ It can be used per site. Network-level configuration is planned.
 
 == Upgrade Notice ==
 
-= 0.3.0 =
-Adds content indexing. Still a development release: nothing searches the index
-yet, so it is not suitable for production sites.
+= 0.4.0 =
+Search now works end to end. Turn it on from the SolrEngine dashboard once
+indexing has finished.

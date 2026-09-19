@@ -65,12 +65,26 @@ interface SearchBackend {
 	 */
 	public function capabilities(): Capabilities;
 
-	/*
-	 * Arriving in later phases, once the types they need have a shape worth
-	 * freezing. Listed here so the intended surface is visible:
+	/**
+	 * Run a search.
 	 *
-	 *   Phase 3: search( SearchQuery $query ): Result   // value: SearchResults
-	 *   Phase 4: suggest( SuggestQuery $query ): Result // value: Suggestions
+	 * Implementations must not accept engine query syntax. Everything they
+	 * need is on the SearchQuery as structured values, and the absence of any
+	 * route for raw syntax is what makes the public endpoint safe to expose.
+	 *
+	 * @since 0.4.0
+	 *
+	 * @param SearchQuery $query What to search for.
+	 * @return Result Success carrying SearchResults, or a failure. A failure is
+	 *                an expected condition: the caller falls back to WordPress
+	 *                rather than showing an error.
+	 */
+	public function search( SearchQuery $query ): Result;
+
+	/*
+	 * Arriving in Phase 4:
+	 *
+	 *   suggest( SuggestQuery $query ): Result // value: Suggestions
 	 *
 	 * Facets are carried inside SearchQuery and SearchResults rather than
 	 * through a separate method, because a facet request without its query is

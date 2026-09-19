@@ -17,8 +17,11 @@ use SolrEngine\Contracts\SchemaBackend;
 use SolrEngine\Contracts\SchemaContract;
 use SolrEngine\Contracts\SchemaPlan;
 use SolrEngine\Contracts\SearchBackend;
+use SolrEngine\Contracts\SearchQuery;
 use SolrEngine\Contracts\Selector;
 use SolrEngine\Contracts\WriteResult;
+use SolrEngine\Search\QueryTranslator;
+use SolrEngine\Search\ResponseParser;
 use SolrEngine\Schema\SchemaExporter;
 use SolrEngine\Schema\SchemaPlanner;
 use SolrEngine\Schema\SchemaStateFactory;
@@ -74,23 +77,46 @@ final class SolrBackend implements SearchBackend, IndexBackend, SchemaBackend {
 	private $commit_within_ms;
 
 	/**
+	 * Builds Solr parameters from a structured query.
+	 *
+	 * @var QueryTranslator
+	 */
+	private $translator;
+
+	/**
+	 * Reads Solr responses.
+	 *
+	 * @var ResponseParser
+	 */
+	private $parser;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param HttpTransport  $http             Transport.
-	 * @param SchemaPlanner  $planner          Schema planner.
-	 * @param SchemaExporter $exporter         Schema exporter.
-	 * @param int            $commit_within_ms Commit window in milliseconds.
+	 * @param HttpTransport   $http             Transport.
+	 * @param SchemaPlanner   $planner          Schema planner.
+	 * @param SchemaExporter  $exporter         Schema exporter.
+	 * @param int             $commit_within_ms Commit window in milliseconds.
+	 * @param QueryTranslator $translator       Query translator.
+	 * @param ResponseParser  $parser           Response parser.
 	 */
 	public function __construct(
 		HttpTransport $http,
 		SchemaPlanner $planner,
 		SchemaExporter $exporter,
-		int $commit_within_ms = 60000
+		int $commit_within_ms = 60000,
+		?QueryTranslator $translator = null,
+		?ResponseParser $parser = null
 	) {
 		$this->http             = $http;
 		$this->planner          = $planner;
 		$this->exporter         = $exporter;
 		$this->commit_within_ms = max( 0, $commit_within_ms );
+		$this->translator       = $translator ?? new QueryTranslator(
+			new \SolrEngine\Search\RelevanceProfile(),
+			\SolrEngine\Search\FilterRegistry::defaults()
+		);
+		$this->parser           = $parser ?? new ResponseParser();
 	}
 
 	/**
@@ -171,6 +197,48 @@ final class SolrBackend implements SearchBackend, IndexBackend, SchemaBackend {
 		);
 
 		return $this->capabilities;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @param SearchQuery $query What to search for.
+	 * @return Result
+	 */
+	public function search( SearchQuery $query ): Result {
+		$result = $this->http->get( '/select', $this->translator->translate( $query, 'standard' ) );
+
+		if ( $result->is_failure() ) {
+			return $result;
+		}
+
+		$results = $this->parser->parse( (array) $result->value( array() ), $query );
+
+		if ( ! $results->is_empty() || ! $query->has_terms() ) {
+			return Result::success( $results );
+		}
+
+		// Nothing matched. Retry with fuzziness rather than making every query
+		// fuzzy: always-on fuzziness costs precision for every visitor in order
+		// to rescue the few queries that need it, and it is slower.
+		foreach ( array( 'fuzzy', 'loosened' ) as $strategy ) {
+			$retry = $this->http->get( '/select', $this->translator->translate( $query, $strategy ) );
+
+			if ( $retry->is_failure() ) {
+				break;
+			}
+
+			$widened = $this->parser->parse( (array) $retry->value( array() ), $query );
+
+			if ( ! $widened->is_empty() ) {
+				// The strategy is reported so a theme can say "no exact
+				// matches, showing similar results" rather than pretending
+				// this is what was asked for.
+				return Result::success( $widened->with_strategy( $strategy ) );
+			}
+		}
+
+		return Result::success( $results );
 	}
 
 	/**

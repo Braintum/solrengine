@@ -1,0 +1,288 @@
+<?php
+/**
+ * Policy around searching.
+ *
+ * @package SolrEngine
+ */
+
+namespace SolrEngine\Search;
+
+use SolrEngine\Contracts\Logger;
+use SolrEngine\Contracts\Result;
+use SolrEngine\Contracts\SearchBackend;
+use SolrEngine\Contracts\SearchQuery;
+use SolrEngine\Contracts\SearchResults;
+
+/**
+ * Decides whether and how a search runs, and what happens when it cannot.
+ *
+ * The backend answers queries. This decides policy: caching, the circuit
+ * breaker, and what a failure means. Both the WordPress query integration and
+ * the REST controllers go through here, so relevance and failure handling
+ * cannot diverge between the two.
+ *
+ * The circuit breaker is the piece worth explaining. When Solr is down, every
+ * visitor's search would otherwise wait for the full timeout before falling
+ * back — turning an outage of the search backend into an outage of the site's
+ * perceived speed. After a few consecutive failures the breaker opens and
+ * searches fall back immediately, without a request, until a cooldown expires.
+ *
+ * @since 0.4.0
+ */
+final class SearchService {
+
+	/**
+	 * Cache group for search results.
+	 *
+	 * @var string
+	 */
+	private const CACHE_GROUP = 'solrengine';
+
+	/**
+	 * Option holding circuit breaker state.
+	 *
+	 * @var string
+	 */
+	private const BREAKER_OPTION = 'solrengine_breaker';
+
+	/**
+	 * Consecutive failures before the breaker opens.
+	 *
+	 * @var int
+	 */
+	private const FAILURE_THRESHOLD = 3;
+
+	/**
+	 * Seconds the breaker stays open.
+	 *
+	 * @var int
+	 */
+	private const COOLDOWN_SECONDS = 60;
+
+	/**
+	 * Backend to query.
+	 *
+	 * @var SearchBackend|null
+	 */
+	private $backend;
+
+	/**
+	 * Logger.
+	 *
+	 * @var Logger
+	 */
+	private $logger;
+
+	/**
+	 * Seconds to cache a result set, or 0 to not cache.
+	 *
+	 * @var int
+	 */
+	private $cache_ttl;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param SearchBackend|null $backend   Backend to query, or null when none.
+	 * @param Logger             $logger    Logger.
+	 * @param int                $cache_ttl Seconds to cache results.
+	 */
+	public function __construct( ?SearchBackend $backend, Logger $logger, int $cache_ttl = 300 ) {
+		$this->backend   = $backend;
+		$this->logger    = $logger;
+		$this->cache_ttl = max( 0, $cache_ttl );
+	}
+
+	/**
+	 * Whether a search can be attempted at all.
+	 *
+	 * @since 0.4.0
+	 *
+	 * @return bool
+	 */
+	public function is_available(): bool {
+		return null !== $this->backend && ! $this->breaker_is_open();
+	}
+
+	/**
+	 * Run a search.
+	 *
+	 * @since 0.4.0
+	 *
+	 * @param SearchQuery $query What to search for.
+	 * @return Result Success carrying SearchResults, or a failure. A failure is
+	 *                an expected condition and the caller falls back.
+	 */
+	public function search( SearchQuery $query ): Result {
+		if ( null === $this->backend ) {
+			return Result::failure( 'no_backend', 'No search backend is configured.' );
+		}
+
+		if ( $this->breaker_is_open() ) {
+			return Result::failure( 'circuit_open', 'The search backend is temporarily unavailable.' );
+		}
+
+		/**
+		 * Filters a query before it reaches the backend.
+		 *
+		 * @since 0.4.0
+		 *
+		 * @param SearchQuery $query The query about to run.
+		 */
+		$query = apply_filters( 'solrengine_search_query', $query );
+
+		if ( ! $query instanceof SearchQuery ) {
+			return Result::failure( 'bad_filter', 'A solrengine_search_query filter returned something that is not a SearchQuery.' );
+		}
+
+		$cached = $this->from_cache( $query );
+
+		if ( null !== $cached ) {
+			return Result::success( $cached );
+		}
+
+		$result = $this->backend->search( $query );
+
+		if ( $result->is_failure() ) {
+			$this->record_failure( $result->code() );
+
+			return $result;
+		}
+
+		$this->record_success();
+
+		$results = $result->value();
+
+		if ( ! $results instanceof SearchResults ) {
+			return Result::failure( 'bad_results', 'The backend returned something that is not SearchResults.' );
+		}
+
+		$this->to_cache( $query, $results );
+
+		/**
+		 * Filters results before they are returned.
+		 *
+		 * @since 0.4.0
+		 *
+		 * @param SearchResults $results The results.
+		 * @param SearchQuery   $query   The query that produced them.
+		 */
+		$results = apply_filters( 'solrengine_search_results', $results, $query );
+
+		return $results instanceof SearchResults
+			? Result::success( $results )
+			: Result::failure( 'bad_filter', 'A solrengine_search_results filter returned something unusable.' );
+	}
+
+	/**
+	 * Read cached results.
+	 *
+	 * Only for visitors who are not logged in. A logged-in user may be able to
+	 * see content a visitor cannot, and one shared cache entry would serve one
+	 * of them the other's view.
+	 *
+	 * @param SearchQuery $query Query.
+	 * @return SearchResults|null
+	 */
+	private function from_cache( SearchQuery $query ): ?SearchResults {
+		if ( 0 === $this->cache_ttl || is_user_logged_in() ) {
+			return null;
+		}
+
+		$cached = wp_cache_get( $this->cache_key( $query ), self::CACHE_GROUP );
+
+		return $cached instanceof SearchResults ? $cached : null;
+	}
+
+	/**
+	 * Store results in the cache.
+	 *
+	 * @param SearchQuery   $query   Query.
+	 * @param SearchResults $results Results.
+	 * @return void
+	 */
+	private function to_cache( SearchQuery $query, SearchResults $results ): void {
+		if ( 0 === $this->cache_ttl || is_user_logged_in() ) {
+			return;
+		}
+
+		wp_cache_set( $this->cache_key( $query ), $results, self::CACHE_GROUP, $this->cache_ttl );
+	}
+
+	/**
+	 * A cache key for a query.
+	 *
+	 * Includes the schema contract version, so applying a schema change or
+	 * reindexing invalidates every entry at once without enumerating keys.
+	 *
+	 * @param SearchQuery $query Query.
+	 * @return string
+	 */
+	private function cache_key( SearchQuery $query ): string {
+		return 'search_' . SOLRENGINE_SCHEMA_CONTRACT_VERSION . '_' . $query->cache_key();
+	}
+
+	/**
+	 * Whether the breaker is currently open.
+	 *
+	 * @return bool
+	 */
+	private function breaker_is_open(): bool {
+		$state = get_option( self::BREAKER_OPTION, array() );
+
+		if ( ! is_array( $state ) || empty( $state['open_until'] ) ) {
+			return false;
+		}
+
+		return time() < (int) $state['open_until'];
+	}
+
+	/**
+	 * Note that a search failed.
+	 *
+	 * @param string $code Failure code.
+	 * @return void
+	 */
+	private function record_failure( string $code ): void {
+		$state = get_option( self::BREAKER_OPTION, array() );
+		$state = is_array( $state ) ? $state : array();
+
+		$failures = (int) ( $state['failures'] ?? 0 ) + 1;
+
+		$state['failures']   = $failures;
+		$state['last_code']  = $code;
+		$state['last_error'] = time();
+
+		if ( $failures >= self::FAILURE_THRESHOLD ) {
+			$state['open_until'] = time() + self::COOLDOWN_SECONDS;
+
+			// Logged once when the breaker trips, not once per failed search.
+			// A backend outage should not also produce a log flood.
+			$this->logger->error(
+				'Search backend unavailable, pausing requests',
+				array(
+					'failures' => $failures,
+					'code'     => $code,
+					'cooldown' => self::COOLDOWN_SECONDS,
+				)
+			);
+		}
+
+		update_option( self::BREAKER_OPTION, $state, false );
+	}
+
+	/**
+	 * Note that a search succeeded.
+	 *
+	 * @return void
+	 */
+	private function record_success(): void {
+		$state = get_option( self::BREAKER_OPTION, array() );
+
+		if ( ! is_array( $state ) || array() === $state ) {
+			return;
+		}
+
+		delete_option( self::BREAKER_OPTION );
+	}
+}

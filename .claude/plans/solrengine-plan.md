@@ -1962,8 +1962,8 @@ Each phase ends in something demonstrable. No phase is "refactoring".
 | --- | --- | --- | --- |
 | **P0 — Foundation** ✅ | A skeleton that is empty but correct | Bootstrap with guards, contracts, container, config and secret storage, PHPCS/PHPStan/PHPUnit/Plugin Check in CI, `readme.txt`, i18n scaffolding | Low |
 | **P1 — Connection and schema** ✅ | Admin connects to Solr and sees an honest diagnosis | Endpoint validator, HTTP transport, auth, version and mode detection, connection test, schema contract v1, shipped configset, schema comparison and confirmed apply | Medium — §18.1, Solr version variance |
-| **P2 — Indexing** ◐ | Content reliably reaches Solr and stays correct | Document model, field map, meta allowlist, dirty-set coalescing, job queue, full sync with cursor and resume, incremental sync including deletes, failure handling, reconciliation, WP-CLI | **High — the hardest phase** |
-| **P3 — Search** | WordPress search is Solr-powered, and safe when it is not | `QueryIntegration`, relevance profile, injection-safe query construction, fallback, REST `search` and `status`, admin dashboard | Medium |
+| **P2 — Indexing** ✅ | Content reliably reaches Solr and stays correct | Document model, field map, meta allowlist, dirty-set coalescing, job queue, full sync with cursor and resume, incremental sync including deletes, failure handling, reconciliation, WP-CLI | **High — the hardest phase** |
+| **P3 — Search** ✅ | WordPress search is Solr-powered, and safe when it is not | `QueryIntegration`, relevance profile, injection-safe query construction, fallback, REST `search` and `status`, admin dashboard | Medium |
 | **→ v1.0 to WordPress.org** | | Security review, Plugin Check clean, documentation, disclosure of external services | |
 | **P4 — Suggest and instant search** | Autocomplete in the theme's search box | Suggester configuration and scheduled build, `suggest` endpoint, accessible front-end component, caching | Medium — §19.4 |
 | **P5 — Facets** | Generic faceted search | Facet registry, JSON Facet translation, multi-select, hierarchical taxonomy facets, `facets` endpoint, filter blocks and shortcodes | Medium |
@@ -2116,6 +2116,52 @@ screen belongs with the dashboard work already scheduled for Phase 3.
 **Action Scheduler is now a real dependency**, at 764 KB and GPL-3.0-or-later.
 The combined distributed package is therefore effectively GPLv3, which ADR-004
 anticipated and readme.txt now discloses.
+
+### 25.4 Phase 3 status — complete, 2026-09-19, shipped as 0.4.0
+
+Search works end to end, and the injection defences are verified against a real
+Solr rather than reasoned about. 168 unit tests and 33 backend tests pass,
+alongside coding standards, static analysis and the version check.
+
+| Deliverable | State |
+| --- | --- |
+| `SearchQuery`, `SearchResults`, `SearchHit` contracts | Done. No route for engine syntax exists on any of them |
+| Query translator | Done. Parameter substitution, server-built filters, escaped values |
+| Relevance profile | Done. Field and phrase weighting, minimum match, optional recency |
+| Filter registry | Done. Unknown keys rejected, not ignored |
+| Response parser | Done, defensive against malformed responses |
+| `SearchService` | Done, with caching and a circuit breaker |
+| `QueryIntegration` | Done. `posts_pre_query`, `null` on failure |
+| REST search and status | Done, with declarative argument validation |
+| Rate limiter | Done, with its own ineffectiveness surfaced |
+| Admin dashboard | Done |
+| Reconciliation (carried from P2) | Done |
+
+**Two defects that only a live Solr could have found**, both of which failed
+silently with a plausible-looking response:
+
+1. **Filter queries were being dropped entirely.** PHP's `http_build_query()`
+   encodes an array as `fq[0]=` and `fq[1]=`, which Solr does not recognise as
+   `fq` at all. Since the filters SolrEngine adds include the site scope and
+   the public-visibility restriction, every query was running with no security
+   filtering on it. The transport now builds repeated parameters itself.
+2. **A stray `defType=edismax` made every search match nothing.** With
+   `defType` set, edismax parses the `q` string itself and treats the
+   `{!edismax v=$se_terms}` local parameter as literal text, so the query
+   searched for that literal string. No error, just zero results.
+
+Both are now regression tests. The second is the reason the injection suite
+opens with a control assertion: without one, every "the attack returned
+nothing" test would have passed on a query that simply never matched anything.
+
+**A third defect was caught by reading.** The reconciler's expected count
+excluded password-protected posts, while the document builder indexes them as
+metadata. Every site with one protected post would have reported permanent
+drift.
+
+**The plan's §25 ordering held up.** Reconciliation moved here from Phase 2 for
+the stated reason and proved easier to specify with search live, because
+"drift" is only meaningful once someone is querying the index.
 
 Ordering rationale worth recording: **P5 precedes P6 deliberately.** WooCommerce filtering is the
 strongest commercial signal (§6, Dana), but it is built out of generic faceting. Building facets

@@ -8,6 +8,7 @@
 namespace SolrEngine;
 
 use SolrEngine\Admin\ConnectionScreen;
+use SolrEngine\Admin\DashboardScreen;
 use SolrEngine\Backend\BackendRegistry;
 use SolrEngine\Backend\Solr\EndpointValidator;
 use SolrEngine\Backend\Solr\HttpTransport;
@@ -25,6 +26,16 @@ use SolrEngine\Indexing\Indexer;
 use SolrEngine\Indexing\Queue\ActionSchedulerQueue;
 use SolrEngine\Indexing\Queue\CronQueue;
 use SolrEngine\Indexing\QueueWorker;
+use SolrEngine\Indexing\Reconciler;
+use SolrEngine\Integration\WordPress\QueryIntegration;
+use SolrEngine\Rest\RateLimiter;
+use SolrEngine\Rest\SearchController;
+use SolrEngine\Rest\StatusController;
+use SolrEngine\Search\FilterRegistry;
+use SolrEngine\Search\QueryTranslator;
+use SolrEngine\Search\RelevanceProfile;
+use SolrEngine\Search\ResponseParser;
+use SolrEngine\Search\SearchService;
 use SolrEngine\Schema\ContractRegistry;
 use SolrEngine\Schema\SchemaExporter;
 use SolrEngine\Schema\SchemaPlanner;
@@ -332,6 +343,64 @@ final class Bootstrap {
 		);
 
 		$container->share(
+			'search.relevance',
+			static function ( Container $c ): RelevanceProfile {
+				return RelevanceProfile::from_config(
+					$c->get( 'config' )->get_array( 'search.relevance', array() )
+				);
+			}
+		);
+
+		$container->share(
+			'search.filters',
+			static function ( Container $c ): FilterRegistry {
+				$taxonomies = array();
+
+				foreach ( get_taxonomies( array( 'public' => true ), 'names' ) as $taxonomy ) {
+					$taxonomies[] = (string) $taxonomy;
+				}
+
+				unset( $c );
+
+				return FilterRegistry::defaults( $taxonomies );
+			}
+		);
+
+		$container->share(
+			'search.service',
+			static function ( Container $c ): SearchService {
+				return new SearchService(
+					$c->get( 'backends' )->search(),
+					$c->get( 'logger' ),
+					$c->get( 'config' )->get_int( 'search.cache_ttl', 300 )
+				);
+			}
+		);
+
+		$container->share(
+			'rest.rate_limiter',
+			static function ( Container $c ): RateLimiter {
+				$config = $c->get( 'config' );
+
+				return new RateLimiter(
+					$config->get_int( 'search.rate_limit', 60 ),
+					$config->get_int( 'search.rate_window', 60 )
+				);
+			}
+		);
+
+		$container->share(
+			'indexing.reconciler',
+			static function ( Container $c ): Reconciler {
+				return new Reconciler(
+					$c->get( 'backends' ),
+					$c->get( 'config' ),
+					$c->get( 'logger' )
+				);
+			}
+		);
+
+		$container->share(
 			'diagnostics.connection',
 			static function ( Container $c ): ConnectionDiagnostic {
 				return new ConnectionDiagnostic(
@@ -405,6 +474,8 @@ final class Bootstrap {
 		add_action( 'init', array( $this, 'load_textdomain' ) );
 
 		$this->register_indexing( $container );
+		$this->register_search( $container );
+		$this->register_rest( $container );
 
 		if ( is_admin() ) {
 			add_action(
@@ -419,6 +490,8 @@ final class Bootstrap {
 						$container->get( 'schema.contracts' ),
 						$container->get( 'schema.exporter' )
 					) )->add_menu();
+
+					( new DashboardScreen( $container ) )->add_menu();
 				},
 				9
 			);
@@ -601,6 +674,88 @@ final class Bootstrap {
 			$indexer,
 			$container->get( 'logger' ),
 			defined( 'SOLRENGINE_SYNC_INDEXING' ) && SOLRENGINE_SYNC_INDEXING
+		);
+	}
+
+	/**
+	 * Attach the search integration.
+	 *
+	 * Registered on the front end only. An admin request never searches
+	 * through this path, and attaching a pre_get_posts listener to every
+	 * wp-admin screen would be a cost paid on every page for nothing.
+	 *
+	 * @param Container $container Service container.
+	 * @return void
+	 */
+	private function register_search( Container $container ): void {
+		if ( is_admin() ) {
+			return;
+		}
+
+		$config = $container->get( 'config' );
+
+		if ( ! $config instanceof Config ) {
+			return;
+		}
+
+		// Checked before anything is constructed. A site that has not turned
+		// search on should not pay for a backend, an endpoint validator or a
+		// query translator on every front-end request.
+		if ( ! $config->get_bool( 'search.enabled', false ) ) {
+			return;
+		}
+
+		// Registered immediately rather than on a later hook: pre_get_posts can
+		// fire before "wp" on some request shapes, and a listener attached after
+		// the query it was meant to intercept is worse than no listener.
+		$integration = new QueryIntegration(
+			$container->get( 'search.service' ),
+			$config,
+			(int) $container->get( 'site_id' )
+		);
+
+		$container->instance( 'search.integration', $integration );
+
+		$integration->register();
+	}
+
+	/**
+	 * Register the REST routes.
+	 *
+	 * @param Container $container Service container.
+	 * @return void
+	 */
+	private function register_rest( Container $container ): void {
+		add_action(
+			'rest_api_init',
+			static function () use ( $container ): void {
+				$config = $container->get( 'config' );
+
+				if ( ! $config instanceof Config ) {
+					return;
+				}
+
+				( new SearchController(
+					$container->get( 'search.service' ),
+					$container->get( 'search.filters' ),
+					$config,
+					$container->get( 'rest.rate_limiter' ),
+					(int) $container->get( 'site_id' )
+				) )->register();
+
+				( new StatusController( $container ) )->register();
+			}
+		);
+
+		add_action(
+			Reconciler::HOOK,
+			static function () use ( $container ): void {
+				$reconciler = $container->get( 'indexing.reconciler' );
+
+				if ( $reconciler instanceof Reconciler ) {
+					$reconciler->run();
+				}
+			}
 		);
 	}
 }

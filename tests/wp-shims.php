@@ -65,3 +65,28 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 		return json_encode( $data, $options, $depth ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
 	}
 }
+
+if ( ! function_exists( 'do_action' ) ) {
+	/**
+	 * @param string $hook Hook name.
+	 * @param mixed  ...$args Arguments.
+	 * @return void
+	 */
+	function do_action( string $hook, ...$args ): void {
+		unset( $hook, $args );
+	}
+}
+
+if ( ! function_exists( 'apply_filters' ) ) {
+	/**
+	 * @param string $hook  Hook name.
+	 * @param mixed  $value Value to filter.
+	 * @param mixed  ...$args Extra arguments.
+	 * @return mixed
+	 */
+	function apply_filters( string $hook, $value, ...$args ) {
+		unset( $hook, $args );
+
+		return $value;
+	}
+}
