@@ -74,3 +74,42 @@ more important half of this decision: it is the single constraint that prevents 
 from becoming a Solr proxy, and it has to be designed into the facet layer from the start, because
 retrofitting an allowlist onto an API that already accepts raw filters means breaking every client
 that adopted the loose form.
+
+---
+
+## Addendum, 2026-09-19 — implementation notes from Phase 5
+
+**Status:** the decision held. Four details were settled by building it, and one
+of them was settled by a live Solr rather than by reading.
+
+**Facet requests travel as a request parameter, not a JSON request body.**
+`json.facet={...}` alongside the existing `q`, `fq` and `fl` parameters. Solr
+parses it identically either way, and the alternative — moving the whole query
+to the JSON Request API — would have given the plugin two request shapes to
+audit instead of one, for no gain. The JSON Facet API is still the only faceting
+API used, which is what this ADR decided.
+
+**Facets are carried on `SearchQuery` and `SearchResults`,** as the
+`SearchBackend` contract anticipated, rather than through a `facets()` method.
+A facet request without its query is meaningless, and a separate method invites
+computing counts apart from the results they describe.
+
+**Hierarchical paths needed a depth prefix.** See the Phase 5 addendum to
+ADR-002. The mechanism this ADR named — prefix faceting over a materialised path
+field — is unchanged; the values it faceted over could not express the root of
+the tree.
+
+**Range facets needed a filter to pair with them.** A range facet's buckets are
+keyed by their lower bound, so the filter registry gained `register_bands()`,
+which turns the value a visitor ticked back into the band it came from using the
+gap the facet was declared with. The rule that a client never sends bounds is
+preserved exactly: it sends a bucket key it was given, and the server, which
+owns the gap, reconstructs the range. The upper bound is exclusive so adjacent
+bands cannot both match one document.
+
+**What the live Solr settled.** The tag-and-exclude pattern was asserted in unit
+tests as a structure, but whether Solr agrees that a filter excluded from a
+facet's domain still narrows the result set is not a question a unit test can
+answer. `tests/Backend/FacetTest.php` asserts both halves against Solr 10,
+including the property the whole feature rests on: the count beside a value
+equals the number of results selecting that value produces.

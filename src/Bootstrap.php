@@ -27,10 +27,13 @@ use SolrEngine\Indexing\Queue\ActionSchedulerQueue;
 use SolrEngine\Indexing\Queue\CronQueue;
 use SolrEngine\Indexing\QueueWorker;
 use SolrEngine\Indexing\Reconciler;
+use SolrEngine\Integration\WordPress\InstantSearch;
 use SolrEngine\Integration\WordPress\QueryIntegration;
+use SolrEngine\Integration\WordPress\SearchFilters;
 use SolrEngine\Rest\RateLimiter;
 use SolrEngine\Rest\SearchController;
 use SolrEngine\Rest\StatusController;
+use SolrEngine\Search\FacetRegistry;
 use SolrEngine\Search\FilterRegistry;
 use SolrEngine\Search\QueryTranslator;
 use SolrEngine\Search\RelevanceProfile;
@@ -127,8 +130,14 @@ final class Bootstrap {
 		$this->booted = true;
 
 		$this->register_services();
-		$this->register_backends();
 		$this->register_hooks();
+
+		// Backends are registered on init, not here. Registering one needs its
+		// display name, and translating a string before init makes WordPress
+		// load the text domain early, which 6.7 warns about on every request
+		// and is right to. Priority 0, so registration still happens before
+		// anything that searches or indexes.
+		add_action( 'init', array( $this, 'register_backends' ), 0 );
 
 		/**
 		 * Fires once SolrEngine has registered its services.
@@ -352,17 +361,69 @@ final class Bootstrap {
 		);
 
 		$container->share(
-			'search.filters',
-			static function ( Container $c ): FilterRegistry {
-				$taxonomies = array();
+			'search.taxonomies',
+			static function (): array {
+				$out = array();
 
-				foreach ( get_taxonomies( array( 'public' => true ), 'names' ) as $taxonomy ) {
-					$taxonomies[] = (string) $taxonomy;
+				foreach ( get_taxonomies( array( 'public' => true ), 'objects' ) as $taxonomy ) {
+					$out[ (string) $taxonomy->name ] = array(
+						'label'        => (string) ( $taxonomy->labels->name ?? $taxonomy->label ),
+						'hierarchical' => (bool) $taxonomy->hierarchical,
+					);
 				}
 
-				unset( $c );
+				return $out;
+			}
+		);
 
-				return FilterRegistry::defaults( $taxonomies );
+		$container->share(
+			'search.filters',
+			static function ( Container $c ): FilterRegistry {
+				return FilterRegistry::defaults( (array) $c->get( 'search.taxonomies' ) );
+			}
+		);
+
+		$container->share(
+			'search.facets',
+			static function ( Container $c ): FacetRegistry {
+				return FacetRegistry::defaults( (array) $c->get( 'search.taxonomies' ) );
+			}
+		);
+
+		$container->share(
+			'search.translator',
+			static function ( Container $c ): QueryTranslator {
+				// Built from the configured relevance profile and the site's own
+				// registries. Until 0.6.0 the backend quietly built its own with
+				// neither, so a site's relevance settings were ignored and a
+				// taxonomy filter the REST endpoint had just accepted was
+				// dropped without trace on the way to Solr.
+				return new QueryTranslator(
+					$c->get( 'search.relevance' ),
+					$c->get( 'search.filters' ),
+					array(),
+					$c->get( 'search.facets' )
+				);
+			}
+		);
+
+		$container->share(
+			'search.parser',
+			static function ( Container $c ): ResponseParser {
+				return new ResponseParser( $c->get( 'search.facets' ) );
+			}
+		);
+
+		$container->share(
+			'search.filters_ui',
+			static function ( Container $c ): SearchFilters {
+				return new SearchFilters(
+					$c->get( 'search.service' ),
+					$c->get( 'config' ),
+					$c->get( 'search.facets' ),
+					$c->get( 'search.filters' ),
+					(int) $c->get( 'site_id' )
+				);
 			}
 		);
 
@@ -420,9 +481,16 @@ final class Bootstrap {
 	 * Registration is lazy: selecting one backend must not construct another,
 	 * and nothing here opens a connection.
 	 *
+	 * Public because it runs on init rather than inline during boot. An add-on
+	 * registering its own backend on `solrengine_booted` still works: the
+	 * registry is one shared object, and registration order does not matter as
+	 * long as every backend is registered before the first search.
+	 *
+	 * @since 0.1.0
+	 *
 	 * @return void
 	 */
-	private function register_backends(): void {
+	public function register_backends(): void {
 		$container = $this->container;
 
 		$registry = $container->get( 'backends' );
@@ -451,7 +519,10 @@ final class Bootstrap {
 					$config->get_bool( 'connection.verify_tls', true )
 				),
 				$container->get( 'schema.planner' ),
-				$container->get( 'schema.exporter' )
+				$container->get( 'schema.exporter' ),
+				$config->get_int( 'index.commit_within_ms', 60000 ),
+				$container->get( 'search.translator' ),
+				$container->get( 'search.parser' )
 			);
 		};
 
@@ -475,6 +546,7 @@ final class Bootstrap {
 
 		$this->register_indexing( $container );
 		$this->register_search( $container );
+		$this->register_filters_ui( $container );
 		$this->register_rest( $container );
 
 		if ( is_admin() ) {
@@ -488,7 +560,8 @@ final class Bootstrap {
 						$container->get( 'credentials' ),
 						$container->get( 'diagnostics.connection' ),
 						$container->get( 'schema.contracts' ),
-						$container->get( 'schema.exporter' )
+						$container->get( 'schema.exporter' ),
+						$container->get( 'search.facets' )
 					) )->add_menu();
 
 					( new DashboardScreen( $container ) )->add_menu();
@@ -698,25 +771,116 @@ final class Bootstrap {
 			return;
 		}
 
-		// Checked before anything is constructed. A site that has not turned
-		// search on should not pay for a backend, an endpoint validator or a
-		// query translator on every front-end request.
+		// Instant search is independent of search replacement, so a site can
+		// try suggestions before switching its search over. Registering it
+		// only enqueues an asset; nothing is constructed unless a visitor
+		// actually types.
+		if ( $config->get_bool( 'search.instant_enabled', false ) ) {
+			( new InstantSearch( $config ) )->register();
+		}
+
+		// Checked before anything else is constructed. A site that has not
+		// turned search on should not pay for a backend, an endpoint validator
+		// or a query translator on every front-end request.
 		if ( ! $config->get_bool( 'search.enabled', false ) ) {
 			return;
 		}
 
-		// Registered immediately rather than on a later hook: pre_get_posts can
-		// fire before "wp" on some request shapes, and a listener attached after
-		// the query it was meant to intercept is worse than no listener.
-		$integration = new QueryIntegration(
-			$container->get( 'search.service' ),
-			$config,
-			(int) $container->get( 'site_id' )
+		$container->share(
+			'search.integration',
+			static function ( Container $c ) use ( $config ): QueryIntegration {
+				return new QueryIntegration(
+					$c->get( 'search.service' ),
+					$config,
+					(int) $c->get( 'site_id' ),
+					$c->get( 'search.filters' ),
+					$c->get( 'search.facets' )
+				);
+			}
 		);
 
-		$container->instance( 'search.integration', $integration );
+		// The listeners are attached immediately — pre_get_posts can fire
+		// before "wp" on some request shapes, and a listener attached after the
+		// query it was meant to intercept is worse than no listener — but the
+		// integration behind them is built on first use.
+		//
+		// That matters for more than laziness. Both registries are built from
+		// the site's public taxonomies, and taxonomies do not exist until init.
+		// Building them here would hand every site a filter registry holding
+		// nothing, on the one code path where a visitor would notice.
+		$resolve = static function () use ( $container ): ?QueryIntegration {
+			$integration = $container->get( 'search.integration' );
 
-		$integration->register();
+			return $integration instanceof QueryIntegration ? $integration : null;
+		};
+
+		add_action(
+			'pre_get_posts',
+			static function ( $query ) use ( $resolve ): void {
+				$integration = $resolve();
+
+				if ( null !== $integration ) {
+					$integration->mark_query( $query );
+				}
+			}
+		);
+
+		add_filter(
+			'posts_pre_query',
+			static function ( $posts, $query ) use ( $resolve ) {
+				$integration = $resolve();
+
+				return null === $integration ? $posts : $integration->maybe_substitute( $posts, $query );
+			},
+			10,
+			2
+		);
+	}
+
+	/**
+	 * Register the filter panel's block and shortcode.
+	 *
+	 * Registered in the admin as well as on the front end, because the block
+	 * has to exist for the editor to offer it. Only the registration happens
+	 * here: the renderer is resolved inside the callbacks, so a page that
+	 * contains no filter panel never constructs a search backend.
+	 *
+	 * @param Container $container Service container.
+	 * @return void
+	 */
+	private function register_filters_ui( Container $container ): void {
+		add_action(
+			'init',
+			static function () use ( $container ): void {
+				SearchFilters::register_assets();
+
+				$ui = static function () use ( $container ): ?SearchFilters {
+					$service = $container->get( 'search.filters_ui' );
+
+					return $service instanceof SearchFilters ? $service : null;
+				};
+
+				add_shortcode(
+					SearchFilters::SHORTCODE,
+					static function ( $atts ) use ( $ui ): string {
+						$panel = $ui();
+
+						return null === $panel ? '' : $panel->shortcode( is_array( $atts ) ? $atts : array() );
+					}
+				);
+
+				register_block_type(
+					SOLRENGINE_PLUGIN_DIR . 'blocks/search-filters',
+					array(
+						'render_callback' => static function ( $attributes ) use ( $ui ): string {
+							$panel = $ui();
+
+							return null === $panel ? '' : $panel->render_block( (array) $attributes );
+						},
+					)
+				);
+			}
+		);
 	}
 
 	/**
@@ -738,6 +902,7 @@ final class Bootstrap {
 				( new SearchController(
 					$container->get( 'search.service' ),
 					$container->get( 'search.filters' ),
+					$container->get( 'search.facets' ),
 					$config,
 					$container->get( 'rest.rate_limiter' ),
 					(int) $container->get( 'site_id' )

@@ -90,6 +90,8 @@ final class Config {
 				'connection.read_timeout'       => 10,
 				'connection.allow_private_ip'   => false,
 				'connection.verify_tls'         => true,
+				'connection.backend'            => 'solr',
+				'connection.allowed_ports'      => array( 80, 443, 8443, 8983 ),
 
 				'index.batch_size'              => 100,
 				'index.commit_within_ms'        => 60000,
@@ -98,8 +100,14 @@ final class Config {
 				'index.meta_allowlist'          => array(),
 
 				'search.enabled'                => false,
+				'search.instant_enabled'        => false,
+				'search.instant_limit'          => 8,
 				'search.max_rows'               => 50,
 				'search.deep_paging_limit'      => 1000,
+				'search.cache_ttl'              => 300,
+				'search.rate_limit'             => 60,
+				'search.rate_window'            => 60,
+				'search.relevance'              => array(),
 
 				'runtime.debug'                 => false,
 			),

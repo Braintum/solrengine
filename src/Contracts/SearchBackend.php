@@ -81,11 +81,25 @@ interface SearchBackend {
 	 */
 	public function search( SearchQuery $query ): Result;
 
+	/**
+	 * Suggest completions for what a visitor has typed.
+	 *
+	 * Separate from search() because the two want different things: a search
+	 * wants recall and ranking, an autocomplete wants a handful of titles as
+	 * fast as possible and will be discarded on the next keystroke.
+	 *
+	 * The same rule applies as to search: no engine syntax reaches this, and
+	 * the same visibility and site filters are enforced. An autocomplete that
+	 * leaked a private title would leak it just as completely as a results page.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @param SuggestQuery $query What has been typed.
+	 * @return Result Success carrying Suggestions, or a failure.
+	 */
+	public function suggest( SuggestQuery $query ): Result;
+
 	/*
-	 * Arriving in Phase 4:
-	 *
-	 *   suggest( SuggestQuery $query ): Result // value: Suggestions
-	 *
 	 * Facets are carried inside SearchQuery and SearchResults rather than
 	 * through a separate method, because a facet request without its query is
 	 * meaningless and a second method would invite computing them apart.

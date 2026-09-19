@@ -1,0 +1,20 @@
+{
+  "name": "solrengine",
+  "version": "0.6.0",
+  "description": "Apache Solr powered search for WordPress.",
+  "license": "GPL-2.0-or-later",
+  "private": true,
+  "scripts": {
+    "build": "wp-scripts build",
+    "start": "wp-scripts start",
+    "lint:js": "wp-scripts lint-js assets/src",
+    "lint:css": "wp-scripts lint-style assets/src",
+    "format": "wp-scripts format assets/src"
+  },
+  "devDependencies": {
+    "@wordpress/scripts": "^30.0.0"
+  },
+  "browserslist": [
+    "extends @wordpress/browserslist-config"
+  ]
+}

@@ -71,6 +71,8 @@ never searches and never saves a post pays for `Bootstrap` and nothing else.
 | Hook | Type | Purpose |
 | --- | --- | --- |
 | `solrengine_booted` | action | Register a backend, facet or admin screen. Receives the container. Fires before anything is constructed |
+| `solrengine_register_filters` | action | Register a filter a caller may narrow by |
+| `solrengine_facet_definitions` | filter | Register a facet a caller may count by |
 
 More arrive with the phases that need them. The plan's section 11.3 lists the
 intended set; each one is public API from 1.0 and needs a test and a docblock

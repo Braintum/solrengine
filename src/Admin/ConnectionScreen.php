@@ -12,6 +12,7 @@ use SolrEngine\Diagnostics\ConnectionDiagnostic;
 use SolrEngine\Diagnostics\DiagnosticReport;
 use SolrEngine\Schema\ContractRegistry;
 use SolrEngine\Schema\SchemaExporter;
+use SolrEngine\Search\FacetRegistry;
 use SolrEngine\Support\Config;
 use SolrEngine\Support\Credentials;
 
@@ -80,6 +81,13 @@ final class ConnectionScreen {
 	private $exporter;
 
 	/**
+	 * Registered facets.
+	 *
+	 * @var FacetRegistry
+	 */
+	private $facets;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Config               $config      Configuration.
@@ -87,19 +95,22 @@ final class ConnectionScreen {
 	 * @param ConnectionDiagnostic $diagnostic  Connection diagnostic.
 	 * @param ContractRegistry     $contracts   Contract registry.
 	 * @param SchemaExporter       $exporter    Schema exporter.
+	 * @param FacetRegistry|null   $facets      Registered facets.
 	 */
 	public function __construct(
 		Config $config,
 		Credentials $credentials,
 		ConnectionDiagnostic $diagnostic,
 		ContractRegistry $contracts,
-		SchemaExporter $exporter
+		SchemaExporter $exporter,
+		?FacetRegistry $facets = null
 	) {
 		$this->config      = $config;
 		$this->credentials = $credentials;
 		$this->diagnostic  = $diagnostic;
 		$this->contracts   = $contracts;
 		$this->exporter    = $exporter;
+		$this->facets      = $facets ?? new FacetRegistry();
 	}
 
 	/**
@@ -157,6 +168,8 @@ final class ConnectionScreen {
 		$this->config->set( 'connection.collection', $collection );
 		$this->config->set( 'connection.allow_private_ip', $private );
 		$this->config->set( 'connection.verify_tls', $verify_tls );
+		$this->config->set( 'search.enabled', ! empty( $_POST['search_enabled'] ) );
+		$this->config->set( 'search.instant_enabled', ! empty( $_POST['instant_enabled'] ) );
 
 		$notice = 'saved';
 
@@ -351,8 +364,50 @@ final class ConnectionScreen {
 					</tr>
 				</table>
 
-				<?php submit_button( __( 'Save connection', 'solrengine' ) ); ?>
+				<h2><?php esc_html_e( 'Search', 'solrengine' ); ?></h2>
+
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Replace WordPress search', 'solrengine' ); ?></th>
+						<td>
+							<label>
+								<input
+									type="checkbox"
+									name="search_enabled"
+									value="1"
+									<?php checked( $this->config->get_bool( 'search.enabled' ) ); ?>
+								/>
+								<?php esc_html_e( 'Answer searches from the index', 'solrengine' ); ?>
+							</label>
+							<p class="description">
+								<?php esc_html_e( 'Leave this off until indexing has finished. Turning it on with an empty index would give visitors a site with no search results. If Solr becomes unreachable later, WordPress answers searches itself and visitors see no error.', 'solrengine' ); ?>
+							</p>
+						</td>
+					</tr>
+
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Instant search', 'solrengine' ); ?></th>
+						<td>
+							<label>
+								<input
+									type="checkbox"
+									name="instant_enabled"
+									value="1"
+									<?php checked( $this->config->get_bool( 'search.instant_enabled' ) ); ?>
+								/>
+								<?php esc_html_e( 'Suggest results as visitors type', 'solrengine' ); ?>
+							</label>
+							<p class="description">
+								<?php esc_html_e( 'Attaches a suggestion list to the search field your theme already renders. Works independently of the setting above, so you can try it before switching search over.', 'solrengine' ); ?>
+							</p>
+						</td>
+					</tr>
+				</table>
+
+				<?php submit_button( __( 'Save settings', 'solrengine' ) ); ?>
 			</form>
+
+			<?php $this->render_filters_section(); ?>
 
 			<?php if ( null !== $tested ) : ?>
 				<h2><?php esc_html_e( 'Diagnosis', 'solrengine' ); ?></h2>
@@ -370,6 +425,47 @@ final class ConnectionScreen {
 				onclick="this.select()"
 			><?php echo esc_textarea( $this->exporter->to_xml( $this->contracts->current() ) ); ?></textarea>
 		</div>
+		<?php
+	}
+
+	/**
+	 * Render what a visitor can filter by, and how to show it.
+	 *
+	 * Read-only, deliberately. Editing facet definitions is a later phase, and
+	 * a half-built editor over a contract that is still moving would be worse
+	 * than a list. What an administrator needs today is to know the feature
+	 * exists, what it will offer, and the one thing that stops it working.
+	 *
+	 * @return void
+	 */
+	private function render_filters_section(): void {
+		$facets = $this->facets->available();
+
+		?>
+		<h2><?php esc_html_e( 'Filters', 'solrengine' ); ?></h2>
+
+		<?php if ( array() === $facets ) : ?>
+			<p><?php esc_html_e( 'No filters are registered yet. Registering a public taxonomy, or adding one in code, makes it available here.', 'solrengine' ); ?></p>
+		<?php else : ?>
+			<p>
+				<?php esc_html_e( 'Visitors can narrow search results by the following. Add the "Search filters" block to your search results template, or use the shortcode below in a classic theme.', 'solrengine' ); ?>
+			</p>
+
+			<ul class="ul-disc">
+				<?php foreach ( $facets as $key => $label ) : ?>
+					<li>
+						<strong><?php echo esc_html( $label ); ?></strong>
+						<code><?php echo esc_html( (string) $key ); ?></code>
+					</li>
+				<?php endforeach; ?>
+			</ul>
+
+			<p><code>[solrengine_filters]</code></p>
+
+			<p class="description">
+				<?php esc_html_e( 'Category filters read a field whose format changed in version 0.6.0. If they show nothing, run a full reindex once from the dashboard.', 'solrengine' ); ?>
+			</p>
+		<?php endif; ?>
 		<?php
 	}
 

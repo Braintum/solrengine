@@ -52,6 +52,13 @@ final class SearchResults {
 	private $strategy;
 
 	/**
+	 * Facet counts, keyed by facet key.
+	 *
+	 * @var array<string,FacetResult>
+	 */
+	private $facets = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param SearchHit[] $hits     Matching objects.
@@ -170,6 +177,49 @@ final class SearchResults {
 	 */
 	public function strategy(): string {
 		return $this->strategy;
+	}
+
+	/**
+	 * Facet counts, keyed by facet key.
+	 *
+	 * Carried here rather than fetched separately because a count without the
+	 * query that produced it is meaningless: "42 guides" is only true of one
+	 * particular set of filters, and a second request to work them out would
+	 * be answered against an index that had moved on.
+	 *
+	 * @since 0.6.0
+	 *
+	 * @return array<string,FacetResult>
+	 */
+	public function facets(): array {
+		return $this->facets;
+	}
+
+	/**
+	 * One facet's counts.
+	 *
+	 * @since 0.6.0
+	 *
+	 * @param string $key Facet key.
+	 * @return FacetResult|null
+	 */
+	public function facet( string $key ): ?FacetResult {
+		return $this->facets[ $key ] ?? null;
+	}
+
+	/**
+	 * A copy carrying facet counts.
+	 *
+	 * @since 0.6.0
+	 *
+	 * @param array<string,FacetResult> $facets Facet counts.
+	 * @return self
+	 */
+	public function with_facets( array $facets ): self {
+		$clone         = clone $this;
+		$clone->facets = $facets;
+
+		return $clone;
 	}
 
 	/**

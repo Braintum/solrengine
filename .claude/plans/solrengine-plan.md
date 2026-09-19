@@ -1965,8 +1965,8 @@ Each phase ends in something demonstrable. No phase is "refactoring".
 | **P2 — Indexing** ✅ | Content reliably reaches Solr and stays correct | Document model, field map, meta allowlist, dirty-set coalescing, job queue, full sync with cursor and resume, incremental sync including deletes, failure handling, reconciliation, WP-CLI | **High — the hardest phase** |
 | **P3 — Search** ✅ | WordPress search is Solr-powered, and safe when it is not | `QueryIntegration`, relevance profile, injection-safe query construction, fallback, REST `search` and `status`, admin dashboard | Medium |
 | **→ v1.0 to WordPress.org** | | Security review, Plugin Check clean, documentation, disclosure of external services | |
-| **P4 — Suggest and instant search** | Autocomplete in the theme's search box | Suggester configuration and scheduled build, `suggest` endpoint, accessible front-end component, caching | Medium — §19.4 |
-| **P5 — Facets** | Generic faceted search | Facet registry, JSON Facet translation, multi-select, hierarchical taxonomy facets, `facets` endpoint, filter blocks and shortcodes | Medium |
+| **P4 — Suggest and instant search** ✅ | Autocomplete in the theme's search box | Suggester configuration and scheduled build, `suggest` endpoint, accessible front-end component, caching | Medium — §19.4 |
+| **P5 — Facets** ✅ | Generic faceted search | Facet registry, JSON Facet translation, multi-select, hierarchical taxonomy facets, `facets` endpoint, filter blocks and shortcodes | Medium |
 | **P6 — WooCommerce** | Fast product search and catalogue filtering | Product and variation mapping, visibility rules, price and attribute facets, Product Collection block integration, classic shop loop integration | **High — §15.4, §15.6** |
 | **P7 — Advanced administration** | Power users stop needing the filesystem | Field mapping UI, relevance tuning, schema migration UX, alias-based zero-downtime reindex, index history | Medium |
 | **P8 — Multisite and multilingual** | Networks and non-English sites | Network configuration, per-site scope UI, language fields and analyzers, WPML and Polylang integration | Medium |
@@ -2162,6 +2162,133 @@ drift.
 **The plan's §25 ordering held up.** Reconciliation moved here from Phase 2 for
 the stated reason and proved easier to specify with search live, because
 "drift" is only meaningful once someone is querying the index.
+
+### 25.5 Phase 4 status — complete, 2026-09-19, shipped as 0.5.0
+
+Autocomplete works, attached to whatever search field a theme already renders.
+188 unit tests and 43 backend tests pass, alongside coding standards, static
+analysis, ESLint and the version check.
+
+| Deliverable | State |
+| --- | --- |
+| `SuggestQuery`, `Suggestion`, `Suggestions` contracts | Done |
+| Prefix-query translator | Done, with the same injection defences as search |
+| `SolrBackend::suggest()` | Done |
+| Suggest caching | Done, more aggressive than search caching |
+| REST `suggest` endpoint | Done |
+| Front-end component | Done. No framework, full combobox accessibility |
+| Build tooling | Done. `@wordpress/scripts`, ESLint clean |
+| Documentation | `docs/search.md` |
+| Solr Suggester component and scheduled build | **Deliberately not built.** See below |
+
+**The planned mechanism was replaced after measurement.** §13.5 specified the
+Solr Suggester with `AnalyzingInfixLookupFactory` and a scheduled rebuild. The
+Suggester needs a `searchComponent` and request handler in `solrconfig.xml`,
+and SolrEngine cannot apply those: the Schema API reaches fields, not
+configuration. Probing a stock Solr 10 confirmed the default configset has no
+`/suggest` handler at all, so that design would have worked only for customers
+who created their collection from SolrEngine's own configset, and been silently
+broken for everyone else.
+
+A prefix query needs no configuration, works on any collection with the schema
+contract applied, and returns documents rather than word completions — which is
+what a visitor typing "macb" actually wants. The scheduled rebuild job
+disappears with it, since there is no dictionary to rebuild.
+
+**Three defects found and fixed during the phase**, two of them mine:
+
+1. **A leading wildcard reached Solr.** A visitor typing `*mac` produced a
+   leading-wildcard term, which Solr answers by walking the whole term
+   dictionary — on the one endpoint that fires on every keystroke. Now
+   stripped, with a test.
+2. **Instant search could not be switched on.** The dashboard told
+   administrators to enable search, and no control existed anywhere to do it.
+   Both toggles are now on the settings screen.
+3. **Instant search was gated behind search replacement**, contradicting its
+   own admin copy. They are now independent, which is what lets a site try
+   suggestions before switching search over.
+
+**§19.4's latency argument is now documented for users**, not just for us.
+`docs/search.md` states plainly that the round trip is dominated by WordPress
+bootstrap rather than by Solr, that this is fast rather than instant, and that
+removing the bootstrap from the path is what a hosted backend would make
+possible — described as a future option, not a promise.
+
+### 25.6 Phase 5 status — complete, 2026-09-19, shipped as 0.6.0
+
+Faceted search works end to end: counts, multi-select, a taxonomy tree browsed
+one level at a time, a REST surface, and a filter panel a site owner can place
+without writing code. 232 unit tests and 56 backend tests pass, alongside
+coding standards, static analysis, ESLint and the version check.
+
+| Deliverable | State |
+| --- | --- |
+| `FacetDefinition`, `FacetResult`, `FacetBucket` contracts | Done |
+| `FacetRegistry`, server-declared, with the `solrengine_facet_definitions` filter | Done |
+| JSON Facet translation | Done. Sent as `json.facet`; see the Phase 5 addendum to ADR-008 |
+| Multi-select with tagged filters and domain exclusion | Done, verified against Solr 10 |
+| Hierarchical taxonomy facets | Done. Required a document-model correction, below |
+| Range facets and their paired band filter | Done. Nothing registers one by default; WooCommerce will |
+| REST `facets` endpoint, and `facets` on `search` | Done |
+| Filter block and shortcode | Done. One renderer, two front doors, no JavaScript |
+| Facet labelling from WordPress | Done, at render time rather than in the cache |
+| Documentation | `docs/facets.md`, plus updates to search, indexing, security and architecture |
+
+**The document model needed correcting before the feature could work.** The
+materialised taxonomy path format from Phase 2 could express "the children of
+term 12" and could not express "the top level of the tree" — a prefix facet has
+no way to say "no slash in this value". Paths now carry their depth (`0/12`,
+`1/12/34`), which makes every level, including the first, one prefix facet. It
+costs one reindex, stated in the upgrade notice, on the settings screen and in
+the documentation, and the failure mode until that reindex runs is an empty
+facet rather than a wrong count. Recorded as a Phase 5 addendum to ADR-002.
+
+**Three defects found in earlier code, all mine, all silent.** The
+composition root never passed a query translator to `SolrBackend`, so the
+backend built its own with a default relevance profile and an empty filter
+registry. The consequence: **a site's configured relevance settings were
+ignored entirely**, and a taxonomy filter that the REST endpoint had just
+validated against the real registry was dropped without trace on the way to
+Solr — accepted, then not applied. Both were invisible from the outside, which
+is how they survived two phases; faceting found them because a filter that does
+not filter makes its own count wrong, and a wrong count is visible. The
+translator and parser are now built in one place and injected, and
+`index.commit_within_ms` reaches the backend for the first time as well.
+
+The third was visible to anyone running with `WP_DEBUG`: registering the Solr
+backend translated its display name during `plugins_loaded`, which makes
+WordPress load the text domain early and emit a `_doing_it_wrong` notice on
+every single request. Backend registration now happens on `init` at priority 0,
+which is before anything searches or indexes and after translation is allowed.
+
+**A fourth defect was caught before it shipped, by running the whole backend
+suite rather than the file being worked on.** The new facet fixtures claimed
+site 602, which is the neighbouring site the autocomplete suite writes to in
+order to prove cross-site isolation. Both suites passed alone and one failed
+when they ran together, in an order-dependent way. Each backend suite now owns a
+block of two site identifiers, and both suites say so in a comment.
+
+**Filter state lives in the URL, and the panel ships no JavaScript.** A
+filtered search is `?s=laptop&se_f[category][]=1/12/34` — bookmarkable,
+shareable, crawlable, cacheable, and reachable with the back button. An
+interactive panel can be added later without changing those URLs, because the
+URLs are the interface. §19's argument about latency does not apply here: a
+filter click is a navigation, not a keystroke.
+
+**Verified against a real site, not only against fixtures.** The feature was
+exercised end to end on WordPress 7.1 with Solr 10: taxonomies discovered from
+a live site (including WooCommerce's), labels resolved from real terms, a child
+category created to prove drill-down, the panel rendered through the shortcode,
+and the REST endpoints called over HTTP. Two bugs surfaced there that no unit
+test would have found: both registries were being built during `plugins_loaded`,
+where `get_taxonomies()` returns almost nothing because taxonomies register on
+`init`; and the panel compared a URL carrying a term identifier against buckets
+keyed by path, so the link that removes a selection added a second one instead.
+
+**The counts are computed in a second request, not on every search.** A page
+showing a filter panel costs one extra Solr round trip; a page without one costs
+nothing. The alternative — counting facets on every search in case something
+later renders a panel — taxes every site that never uses the feature.
 
 Ordering rationale worth recording: **P5 precedes P6 deliberately.** WooCommerce filtering is the
 strongest commercial signal (§6, Dana), but it is built out of generic faceting. Building facets

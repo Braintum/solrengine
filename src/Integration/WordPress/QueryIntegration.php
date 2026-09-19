@@ -9,6 +9,9 @@ namespace SolrEngine\Integration\WordPress;
 
 use SolrEngine\Contracts\SearchQuery;
 use SolrEngine\Contracts\SearchResults;
+use SolrEngine\Search\FacetRegistry;
+use SolrEngine\Search\FacetSelection;
+use SolrEngine\Search\FilterRegistry;
 use SolrEngine\Search\SearchService;
 use SolrEngine\Support\Config;
 use WP_Query;
@@ -54,6 +57,20 @@ final class QueryIntegration {
 	private $config;
 
 	/**
+	 * Which filters may be applied.
+	 *
+	 * @var FilterRegistry
+	 */
+	private $filters;
+
+	/**
+	 * Interprets selected facet values.
+	 *
+	 * @var FacetSelection
+	 */
+	private $selection;
+
+	/**
 	 * Site identifier.
 	 *
 	 * @var int
@@ -70,14 +87,24 @@ final class QueryIntegration {
 	/**
 	 * Constructor.
 	 *
-	 * @param SearchService $search  Search service.
-	 * @param Config        $config  Configuration.
-	 * @param int           $site_id Site identifier.
+	 * @param SearchService       $search  Search service.
+	 * @param Config              $config  Configuration.
+	 * @param int                 $site_id Site identifier.
+	 * @param FilterRegistry|null $filters Which filters may be applied.
+	 * @param FacetRegistry|null  $facets  Which facets may be counted.
 	 */
-	public function __construct( SearchService $search, Config $config, int $site_id ) {
-		$this->search  = $search;
-		$this->config  = $config;
-		$this->site_id = $site_id;
+	public function __construct(
+		SearchService $search,
+		Config $config,
+		int $site_id,
+		?FilterRegistry $filters = null,
+		?FacetRegistry $facets = null
+	) {
+		$this->search    = $search;
+		$this->config    = $config;
+		$this->site_id   = $site_id;
+		$this->filters   = $filters ?? FilterRegistry::defaults();
+		$this->selection = new FacetSelection( $facets ?? new FacetRegistry() );
 	}
 
 	/**
@@ -220,7 +247,40 @@ final class QueryIntegration {
 			$search = $search->with_post_types( $post_types );
 		}
 
-		return $search->with_pagination( $page, $per_page );
+		return $this->with_selected_filters( $search )->with_pagination( $page, $per_page );
+	}
+
+	/**
+	 * Apply the filters the URL carries.
+	 *
+	 * Applied to the main query, not to a separate one, which is what makes a
+	 * filtered search still a WordPress search: the theme's template, its
+	 * pagination and its result count all describe the filtered set, because
+	 * that is the set WP_Query was given.
+	 *
+	 * Unknown keys are dropped here rather than refused. This is a URL a
+	 * visitor can edit, a crawler can mangle and an old bookmark can carry
+	 * after a taxonomy is unregistered; a search page that refuses to render
+	 * because of a stale query string would be worse than one that ignores it.
+	 * The REST endpoint, whose caller is a program, rejects them instead.
+	 *
+	 * @param SearchQuery $search Query being built.
+	 * @return SearchQuery
+	 */
+	private function with_selected_filters( SearchQuery $search ): SearchQuery {
+		foreach ( FacetUrls::selected() as $key => $values ) {
+			if ( ! $this->filters->has( $key ) ) {
+				continue;
+			}
+
+			$values = $this->selection->values_for( $key, $values );
+
+			if ( array() !== $values ) {
+				$search = $search->with_filter( $key, $values );
+			}
+		}
+
+		return $search;
 	}
 
 	/**

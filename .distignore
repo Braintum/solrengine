@@ -10,6 +10,10 @@
 .claude
 .legacy
 
+# The package directory itself. Without this, rsync copies the destination
+# into the destination and the zip contains a partial copy of itself.
+build
+
 # Development tooling
 composer.json
 composer.lock
@@ -24,9 +28,15 @@ phpunit.xml.dist
 .phpunit.cache
 .phpunit.result.cache
 
-# Sources and tests
+# Sources and tests. assets/build is NOT excluded: WordPress.org distributes a
+# zip rather than running a build, so the compiled files are what ships.
+# assets/src stays in the repository, which guideline 4 requires alongside it.
 tests
 bin
 docs
 assets/src
+assets/README.md
 node_modules
+webpack.config.js
+.eslintrc.json
+.npm-cache

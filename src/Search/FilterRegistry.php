@@ -31,16 +31,24 @@ final class FilterRegistry {
 	/**
 	 * Registered filters keyed by public key.
 	 *
-	 * @var array<string,array{field:string,type:string,label:string}>
+	 * @var array<string,array{field:string,type:string,label:string,gap:float}>
 	 */
 	private $filters = array();
 
 	/**
 	 * Build the default registry for a set of taxonomies.
 	 *
+	 * Taxonomies arrive as a map rather than a list because a hierarchical one
+	 * filters differently: it matches on the materialised ancestor path, so
+	 * narrowing to "Guides" includes everything filed below Guides. That is
+	 * what a visitor means by it, and it is what makes a filter agree with the
+	 * facet count beside it — the count comes from the same path field, and a
+	 * filter on term identifiers alone would produce a count of 40 next to a
+	 * page showing 12 results.
+	 *
 	 * @since 0.4.0
 	 *
-	 * @param string[] $taxonomies Public taxonomy names.
+	 * @param array<string,array{label?:string,hierarchical?:bool}> $taxonomies Public taxonomies.
 	 * @return self
 	 */
 	public static function defaults( array $taxonomies = array() ): self {
@@ -49,12 +57,26 @@ final class FilterRegistry {
 		$registry->register( 'post_type', DocumentFields::POST_TYPE, FieldType::STRING, __( 'Content type', 'solrengine' ) );
 		$registry->register( 'author', DocumentFields::AUTHOR_ID, FieldType::INT, __( 'Author', 'solrengine' ) );
 
-		foreach ( $taxonomies as $taxonomy ) {
+		foreach ( $taxonomies as $name => $taxonomy ) {
+			$name  = (string) $name;
+			$label = (string) ( $taxonomy['label'] ?? $name );
+
+			if ( ! empty( $taxonomy['hierarchical'] ) ) {
+				$registry->register(
+					$name,
+					DocumentFields::taxonomy_paths( $name ),
+					FieldType::STRING,
+					$label
+				);
+
+				continue;
+			}
+
 			$registry->register(
-				(string) $taxonomy,
-				DocumentFields::taxonomy_ids( (string) $taxonomy ),
+				$name,
+				DocumentFields::taxonomy_ids( $name ),
 				FieldType::INT,
-				(string) $taxonomy
+				$label
 			);
 		}
 
@@ -100,7 +122,38 @@ final class FilterRegistry {
 			'field' => $field,
 			'type'  => $type,
 			'label' => '' !== $label ? $label : $key,
+			'gap'   => 0.0,
 		);
+	}
+
+	/**
+	 * Register a filter whose values name the start of a numeric band.
+	 *
+	 * The counterpart of a range facet. A range facet's buckets are keyed by
+	 * their lower bound, so this is what turns the value a visitor ticked back
+	 * into the band it came from — server-side, from the same gap the facet was
+	 * declared with. A client sending "1200" gets the band it saw counted; it
+	 * never sends bounds of its own, which is what stops a caller asking Solr
+	 * for an arbitrary range over an arbitrary field.
+	 *
+	 * @since 0.6.0
+	 *
+	 * @param string $key   Public key a caller uses.
+	 * @param string $field Index field it maps to.
+	 * @param float  $gap   Band width.
+	 * @param string $label Human label for a UI.
+	 * @return void
+	 */
+	public function register_bands( string $key, string $field, float $gap, string $label = '' ): void {
+		if ( $gap <= 0.0 ) {
+			return;
+		}
+
+		$this->register( $key, $field, FieldType::FLOAT, $label );
+
+		if ( isset( $this->filters[ $key ] ) ) {
+			$this->filters[ $key ]['gap'] = $gap;
+		}
 	}
 
 	/**
@@ -150,7 +203,12 @@ final class FilterRegistry {
 			return '';
 		}
 
-		$filter   = $this->filters[ $key ];
+		$filter = $this->filters[ $key ];
+
+		if ( $filter['gap'] > 0.0 ) {
+			return $this->band_clause( $filter, $values );
+		}
+
 		$rendered = array();
 
 		foreach ( $values as $value ) {
@@ -179,5 +237,56 @@ final class FilterRegistry {
 		// Multiple values for one key are an OR: picking two categories means
 		// "in either", which is what a shopper ticking two boxes expects.
 		return $filter['field'] . ':(' . implode( ' OR ', $rendered ) . ')';
+	}
+
+	/**
+	 * Build the clause for a banded filter.
+	 *
+	 * The upper bound is exclusive, so adjacent bands cannot both match one
+	 * document. Inclusive bounds would make a product priced at exactly 1200
+	 * appear under both "1100 to 1200" and "1200 to 1300", and the counts
+	 * beside those bands would not add up to the total.
+	 *
+	 * @param array{field:string,type:string,label:string,gap:float} $filter Filter definition.
+	 * @param array<int,scalar>                                      $values Band lower bounds.
+	 * @return string
+	 */
+	private function band_clause( array $filter, array $values ): string {
+		$clauses = array();
+
+		foreach ( $values as $value ) {
+			if ( ! is_numeric( $value ) ) {
+				continue;
+			}
+
+			$start = (float) $value;
+
+			$clauses[] = sprintf(
+				'%s:[%s TO %s}',
+				$filter['field'],
+				self::number( $start ),
+				self::number( $start + $filter['gap'] )
+			);
+		}
+
+		if ( array() === $clauses ) {
+			return '';
+		}
+
+		return 1 === count( $clauses ) ? $clauses[0] : '(' . implode( ' OR ', $clauses ) . ')';
+	}
+
+	/**
+	 * Render a number for a range clause.
+	 *
+	 * Fixed notation, always. PHP renders large floats in exponential form,
+	 * which Solr's range parser does not accept, and the failure would appear
+	 * only for sites whose prices happen to be large.
+	 *
+	 * @param float $value Value to render.
+	 * @return string
+	 */
+	private static function number( float $value ): string {
+		return rtrim( rtrim( number_format( $value, 4, '.', '' ), '0' ), '.' );
 	}
 }

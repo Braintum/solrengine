@@ -107,8 +107,10 @@ holds internal notes, API keys and personal data.
 
 Two leakage paths that return no documents and are easy to miss:
 
-- **Facet counts disclose existence.** Visibility filters are applied in the
-  same request as faceting, before counts are computed.
+- **Facet counts disclose existence.** Visibility and site filters are applied
+  in the same request as faceting, before counts are computed, so a count can
+  never reveal how much private content exists. Asserted against a real Solr in
+  `tests/Backend/FacetTest.php`.
 - **Cross-site leakage on a shared collection.** `se_i_site` is injected by the
   query builder, never supplied by a caller and never removable through a hook.
   On a shared multisite collection it is the only thing separating tenants, so

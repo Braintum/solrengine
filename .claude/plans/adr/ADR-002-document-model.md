@@ -134,3 +134,60 @@ copies are declared from the same source instead, which the same page permits:
 
 **The document ID format is unchanged.** `se:{site_id}:{object_type}:{object_id}`
 was never affected, and `DocumentRef` needed no modification.
+
+---
+
+## Addendum, 2026-09-19 — taxonomy paths carry their depth, corrected during Phase 5
+
+**Status:** Accepted, supersedes the path format this ADR implied.
+
+The original decision indexes a hierarchical term's materialised ancestor paths
+so that one level of a tree can be faceted with a prefix. A term at 12 > 34 > 56
+was indexed as `12`, `12/34` and `12/34/56`.
+
+### What was wrong
+
+That format cannot express the top level of the tree.
+
+Faceting with a prefix of `12/` returns the children of 12, as intended. But the
+root level is "every path containing no slash", and a prefix facet has no way to
+say that. The choices left were to count the entire tree and discard everything
+but the roots in PHP — wrong by construction on a large taxonomy, because the
+bucket limit applies before the discarding — or to add a second field holding
+only roots.
+
+### The corrected format
+
+Each path is prefixed with its depth:
+
+```
+Guides (12) > Beginner (34) > Deep (56)
+
+se_ss_taxpath_category: [ "0/12", "1/12/34", "2/12/34/56" ]
+```
+
+The top level is the prefix `0/`. The children of 12 are `1/12/`. The children
+of 34 are `2/12/34/`. Every level, including the first, is one prefix facet.
+
+This is the same shape Solr's own documentation uses for hierarchical faceting,
+which is some evidence it is the shape the mechanism wants.
+
+### Consequences
+
+**Documents written before 0.6.0 carry the old format and need one reindex.**
+Nothing read the field before Phase 5, so no behaviour regressed; hierarchical
+facets simply find nothing until the reindex runs. The upgrade notice, the
+settings screen and `docs/facets.md` all say so, and the failure is visible
+rather than silent — an empty facet, not a wrong count.
+
+**The schema contract is unchanged.** The field is still `se_ss_taxpath_*`,
+still a multi-valued string with docValues. Only the values changed, which is
+why the contract version did not move: it describes what the schema must hold,
+and the schema is identical.
+
+**Filtering by a path now means "this term or anything below it".** A document
+in 56 carries `1/12/34`, so filtering on that path matches it. This is what a
+visitor ticking "Beginner" means, and — more importantly — it is what makes the
+count rendered beside "Beginner" equal the number of results that ticking it
+produces. A filter on term identifiers would count descendants and return only
+direct members, which is the defining bug of faceted search.

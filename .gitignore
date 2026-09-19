@@ -4,9 +4,11 @@
 /node_modules/
 composer.phar
 
-# Build output
-/assets/build/
+# Build output. assets/build IS tracked: WordPress.org ships a zip rather than
+# running a build, so the compiled files have to be in the release, and keeping
+# them in the repository is what makes the release reproducible from a tag.
 /build/
+/.npm-cache/
 /dist/
 *.zip
 *.tar.gz

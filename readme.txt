@@ -4,7 +4,7 @@ Tags: search, solr, relevance, faceted search, woocommerce
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.4.0
+Stable tag: 0.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -141,11 +141,29 @@ SolrEngine retries with typo tolerance, then with looser matching, before
 reporting no results. The response says which of those produced the results, so
 a theme can tell visitors when it is showing approximate matches.
 
+= Does autocomplete work with my theme's search box? =
+
+It attaches to the search field your theme already renders, so in most cases
+yes, with no changes. Themes with unusual markup can point SolrEngine at their
+own selector with a filter.
+
 = Can I use the search API from my own front end? =
 
 Yes. There is a REST endpoint at `/wp-json/solrengine/v1/search`. It accepts
 search text, pagination, a sort key from a fixed list, and named filters. It
 does not accept raw query syntax, deliberately.
+
+= How do I add filters to my search results page? =
+
+Add the "Search filters" block to your search results template, or put the
+`[solrengine_filters]` shortcode in a classic theme's search template or widget
+area. Both show the same panel. By default it offers every filter your site
+registers; you can name the ones you want instead.
+
+= Why do my category filters show nothing? =
+
+Category filters read a field that changed shape in 0.6.0. Run a full reindex
+once and they will appear.
 
 = Does it support WooCommerce? =
 
@@ -156,6 +174,38 @@ Not yet. WooCommerce product indexing and filtering are planned.
 It can be used per site. Network-level configuration is planned.
 
 == Changelog ==
+
+= 0.6.0 =
+* Faceted search. Visitors can narrow results by content type, category, tag or
+  anything else you register, with a count beside each choice.
+* A "Search filters" block, and a matching [solrengine_filters] shortcode for
+  classic themes and page builders.
+* Filters live in the URL, so a filtered search can be bookmarked, shared and
+  reached with the back button. The panel needs no JavaScript.
+* Ticking one value still shows the counts for the others, so a visitor can
+  always widen a search they have narrowed.
+* Category filters cover everything below the category, and the count beside a
+  category matches the number of results selecting it produces.
+* Hierarchical categories are browsed one level at a time, so a large tree costs
+  no more than a small one.
+* A new REST endpoint at /wp-json/solrengine/v1/facets returns counts without
+  documents, and /search now accepts a facets parameter.
+* Fixed: the relevance profile configured for a site was ignored, and filters
+  for taxonomies were accepted by the REST endpoint and then silently dropped
+  before reaching Solr.
+
+= 0.5.0 =
+* Instant search. Suggestions appear as visitors type, attached to the search
+  field your theme already renders rather than replacing it.
+* Suggestions are results, not word completions: picking one goes straight to
+  the page instead of asking the visitor to press enter again.
+* Fully keyboard operable and announced to screen readers, using the standard
+  combobox pattern.
+* Suggestions respect the same privacy rules as search. A private or
+  another site's title can never appear in the list.
+* A new REST endpoint at /wp-json/solrengine/v1/suggest.
+* Search replacement and instant search can now be switched on from the
+  settings screen, and work independently of each other.
 
 = 0.4.0 =
 * WordPress search is now answered by Solr, with relevance ranking, field
@@ -221,6 +271,9 @@ It can be used per site. Network-level configuration is planned.
 
 == Upgrade Notice ==
 
-= 0.4.0 =
-Search now works end to end. Turn it on from the SolrEngine dashboard once
-indexing has finished.
+= 0.6.0 =
+Adds faceted search. Category filters need a reindex: run a full index from the
+SolrEngine dashboard, or "wp solrengine index full", before using them.
+
+= 0.5.0 =
+Adds instant search. Switch it on from the SolrEngine settings screen.

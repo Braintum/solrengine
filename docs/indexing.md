@@ -37,6 +37,11 @@ be gone.
 | Taxonomy | term names, term IDs, and ancestor paths for hierarchical taxonomies |
 | Meta | only keys you allowlist, with the type you declare |
 
+Ancestor paths carry their depth — a term at 12 > 34 is indexed as `0/12` and
+`1/12/34` — which is what lets a facet return one level of a tree in one
+request. **The depth prefix was added in 0.6.0**, so documents indexed by an
+earlier version need one full reindex before hierarchical filters find them.
+
 Content is stripped of blocks, shortcodes and tags before indexing. Shortcodes
 are removed rather than executed: running `the_content` inside a background job
 would execute arbitrary plugin code once per post, slowly and unpredictably.

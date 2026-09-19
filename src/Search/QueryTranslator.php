@@ -23,9 +23,12 @@ use SolrEngine\Documents\DocumentFields;
  *    so `{!` in user input is a literal brace rather than the start of a local
  *    parameter block. The 0.1.0 prototype passed the raw text as `q`, which let
  *    a visitor rewrite the query.
- * 2. **Server-built everything else.** `fq`, `sort`, `fl`, `rows` and `start`
- *    are assembled here from typed values and a filter registry. No caller can
- *    supply them, and no hook exposes them.
+ * 2. **Server-built everything else.** `fq`, `sort`, `fl`, `rows`, `start` and
+ *    `json.facet` are assembled here from typed values and two registries. No
+ *    caller can supply them, and no hook exposes them. A facet request in
+ *    particular is named by key and built here; facet JSON from a client is
+ *    never accepted, which is what keeps this endpoint from being a Solr proxy
+ *    (ADR-008).
  *
  * A third rule sits above both: filter *values* are escaped even though they
  * come from a registry, because a taxonomy term containing a colon or a quote
@@ -77,16 +80,38 @@ final class QueryTranslator {
 	private $return_fields;
 
 	/**
+	 * Which facets may be counted.
+	 *
+	 * @var FacetRegistry
+	 */
+	private $facets;
+
+	/**
+	 * Builds the JSON Facet request.
+	 *
+	 * @var FacetTranslator
+	 */
+	private $facet_translator;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param RelevanceProfile $relevance     Relevance settings.
-	 * @param FilterRegistry   $filters       Registered filters.
-	 * @param string[]         $return_fields Fields to return.
+	 * @param RelevanceProfile   $relevance     Relevance settings.
+	 * @param FilterRegistry     $filters       Registered filters.
+	 * @param string[]           $return_fields Fields to return.
+	 * @param FacetRegistry|null $facets        Registered facets.
 	 */
-	public function __construct( RelevanceProfile $relevance, FilterRegistry $filters, array $return_fields = array() ) {
-		$this->relevance     = $relevance;
-		$this->filters       = $filters;
-		$this->return_fields = array() !== $return_fields ? $return_fields : self::default_return_fields();
+	public function __construct(
+		RelevanceProfile $relevance,
+		FilterRegistry $filters,
+		array $return_fields = array(),
+		?FacetRegistry $facets = null
+	) {
+		$this->relevance        = $relevance;
+		$this->filters          = $filters;
+		$this->return_fields    = array() !== $return_fields ? $return_fields : self::default_return_fields();
+		$this->facets           = $facets ?? new FacetRegistry();
+		$this->facet_translator = new FacetTranslator( $this->facets );
 	}
 
 	/**
@@ -106,8 +131,12 @@ final class QueryTranslator {
 			// string "{!edismax v=$se_terms}" and finds nothing. Verified
 			// against Solr 10; it fails silently with zero results rather than
 			// erroring, which is why only a live test caught it.
-			'rows'       => $query->per_page(),
-			'start'      => $query->offset(),
+			//
+			// A facets-only request asks for no documents at all. Fetching ten
+			// in order to discard them costs Solr the stored-field retrieval on
+			// the request a visitor repeats most, once per tick of a filter box.
+			'rows'       => $query->wants_documents() ? $query->per_page() : 0,
+			'start'      => $query->wants_documents() ? $query->offset() : 0,
 			'fl'         => implode( ',', $this->return_fields ) . ',score',
 			'qf'         => $this->relevance->query_fields(),
 			'pf'         => $this->relevance->phrase_fields(),
@@ -145,6 +174,16 @@ final class QueryTranslator {
 		}
 
 		$params['fq'] = $this->filter_queries( $query );
+
+		$facets = $this->facet_translator->translate( $query );
+
+		if ( array() !== $facets ) {
+			// Sent as a parameter rather than as a JSON request body, because
+			// the rest of the query is already parameters and one request
+			// shape is easier to audit than two. Solr parses json.facet
+			// identically either way.
+			$params['json.facet'] = (string) wp_json_encode( $facets );
+		}
 
 		if ( $query->wants_highlight() ) {
 			$params['hl']             = 'true';
@@ -264,11 +303,20 @@ final class QueryTranslator {
 		}
 
 		foreach ( $query->filters() as $key => $values ) {
-			$clause = $this->filters->clause_for( (string) $key, (array) $values );
+			$key    = (string) $key;
+			$clause = $this->filters->clause_for( $key, (array) $values );
 
-			if ( '' !== $clause ) {
-				$clauses[] = $clause;
+			if ( '' === $clause ) {
+				continue;
 			}
+
+			// A filter that a facet also counts is tagged, so that facet can
+			// exclude it from its own domain and keep the unselected counts
+			// visible. Untagged, a filter panel becomes a one-way door: every
+			// alternative reads zero the moment one value is ticked.
+			$clauses[] = $this->facets->has( $key )
+				? '{!tag=' . FacetRegistry::tag_for( $key ) . '}' . $clause
+				: $clause;
 		}
 
 		return $clauses;

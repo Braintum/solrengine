@@ -93,6 +93,24 @@ final class SearchQuery {
 	private $highlight = false;
 
 	/**
+	 * Facets to count, keyed by registered facet key.
+	 *
+	 * The value is the node a hierarchy facet counts the children of, and an
+	 * empty string everywhere else. Keys are looked up in a server-side
+	 * registry; a key that is not registered is rejected rather than ignored.
+	 *
+	 * @var array<string,string>
+	 */
+	private $facets = array();
+
+	/**
+	 * Whether the caller wants the matching documents as well as the counts.
+	 *
+	 * @var bool
+	 */
+	private $documents = true;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string $terms   Search text.
@@ -225,6 +243,51 @@ final class SearchQuery {
 	}
 
 	/**
+	 * Facets to count, keyed by facet key.
+	 *
+	 * @since 0.6.0
+	 *
+	 * @return array<string,string>
+	 */
+	public function facets(): array {
+		return $this->facets;
+	}
+
+	/**
+	 * Whether any facet was asked for.
+	 *
+	 * @since 0.6.0
+	 *
+	 * @return bool
+	 */
+	public function wants_facets(): bool {
+		return array() !== $this->facets;
+	}
+
+	/**
+	 * The node a hierarchy facet should count the children of.
+	 *
+	 * @since 0.6.0
+	 *
+	 * @param string $key Facet key.
+	 * @return string Materialised path, or an empty string for the top level.
+	 */
+	public function facet_parent( string $key ): string {
+		return $this->facets[ $key ] ?? '';
+	}
+
+	/**
+	 * Whether the matching documents are wanted, or only the counts.
+	 *
+	 * @since 0.6.0
+	 *
+	 * @return bool
+	 */
+	public function wants_documents(): bool {
+		return $this->documents;
+	}
+
+	/**
 	 * A copy restricted to given post types.
 	 *
 	 * @since 0.4.0
@@ -304,6 +367,65 @@ final class SearchQuery {
 	}
 
 	/**
+	 * A copy that also counts a facet.
+	 *
+	 * The parent is a materialised taxonomy path and means something only to a
+	 * hierarchy facet: it says which node's children to count. It is validated
+	 * here as well as escaped later, because a path is the one facet input that
+	 * originates outside the registry.
+	 *
+	 * @since 0.6.0
+	 *
+	 * @param string $key    Registered facet key.
+	 * @param string $parent_path Node to count the children of.
+	 * @return self
+	 */
+	public function with_facet( string $key, string $parent_path = '' ): self {
+		$clone = clone $this;
+
+		$clone->facets[ $key ] = 1 === preg_match( '#^[0-9]+(/[0-9]+)*$#', $parent_path ) ? $parent_path : '';
+
+		return $clone;
+	}
+
+	/**
+	 * A copy counting several facets at their top level.
+	 *
+	 * @since 0.6.0
+	 *
+	 * @param string[] $keys Registered facet keys.
+	 * @return self
+	 */
+	public function with_facets( array $keys ): self {
+		$clone = $this;
+
+		foreach ( $keys as $key ) {
+			$clone = $clone->with_facet( (string) $key );
+		}
+
+		return $clone;
+	}
+
+	/**
+	 * A copy that asks for counts without the documents.
+	 *
+	 * What the facets endpoint runs. Fetching ten documents in order to throw
+	 * them away costs Solr the stored-field retrieval and costs the response
+	 * its size, on the request most likely to be repeated as a visitor works
+	 * through a filter panel.
+	 *
+	 * @since 0.6.0
+	 *
+	 * @return self
+	 */
+	public function without_documents(): self {
+		$clone            = clone $this;
+		$clone->documents = false;
+
+		return $clone;
+	}
+
+	/**
 	 * A copy that asks for highlighted snippets.
 	 *
 	 * @since 0.4.0
@@ -327,8 +449,10 @@ final class SearchQuery {
 	 */
 	public function cache_key(): string {
 		$filters = $this->filters;
+		$facets  = $this->facets;
 
 		ksort( $filters );
+		ksort( $facets );
 
 		foreach ( $filters as $key => $values ) {
 			sort( $filters[ $key ] );
@@ -346,6 +470,8 @@ final class SearchQuery {
 					$this->per_page,
 					$this->language,
 					$this->highlight,
+					$facets,
+					$this->documents,
 				)
 			)
 		);

@@ -1,0 +1,36 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "solrengine/search-filters",
+	"title": "Search filters",
+	"category": "widgets",
+	"icon": "filter",
+	"description": "Filters for Solr-powered search results, built from the facets this site offers.",
+	"keywords": [ "search", "filter", "facet", "solr" ],
+	"textdomain": "solrengine",
+	"supports": {
+		"html": false,
+		"align": [ "wide" ],
+		"spacing": {
+			"margin": true,
+			"padding": true
+		}
+	},
+	"attributes": {
+		"facets": {
+			"type": "array",
+			"items": { "type": "string" },
+			"default": []
+		},
+		"heading": {
+			"type": "string",
+			"default": ""
+		},
+		"showCounts": {
+			"type": "boolean",
+			"default": true
+		}
+	},
+	"editorScript": "solrengine-filters-block",
+	"style": "solrengine-filters"
+}

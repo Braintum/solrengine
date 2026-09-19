@@ -18,9 +18,13 @@ use SolrEngine\Contracts\SchemaContract;
 use SolrEngine\Contracts\SchemaPlan;
 use SolrEngine\Contracts\SearchBackend;
 use SolrEngine\Contracts\SearchQuery;
+use SolrEngine\Contracts\Suggestion;
+use SolrEngine\Contracts\Suggestions;
+use SolrEngine\Contracts\SuggestQuery;
 use SolrEngine\Contracts\Selector;
 use SolrEngine\Contracts\WriteResult;
 use SolrEngine\Search\QueryTranslator;
+use SolrEngine\Search\SuggestTranslator;
 use SolrEngine\Search\ResponseParser;
 use SolrEngine\Schema\SchemaExporter;
 use SolrEngine\Schema\SchemaPlanner;
@@ -91,6 +95,13 @@ final class SolrBackend implements SearchBackend, IndexBackend, SchemaBackend {
 	private $parser;
 
 	/**
+	 * Builds autocomplete requests.
+	 *
+	 * @var SuggestTranslator
+	 */
+	private $suggester;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param HttpTransport   $http             Transport.
@@ -117,6 +128,7 @@ final class SolrBackend implements SearchBackend, IndexBackend, SchemaBackend {
 			\SolrEngine\Search\FilterRegistry::defaults()
 		);
 		$this->parser           = $parser ?? new ResponseParser();
+		$this->suggester        = new SuggestTranslator();
 	}
 
 	/**
@@ -239,6 +251,62 @@ final class SolrBackend implements SearchBackend, IndexBackend, SchemaBackend {
 		}
 
 		return Result::success( $results );
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @param SuggestQuery $query What has been typed.
+	 * @return Result
+	 */
+	public function suggest( SuggestQuery $query ): Result {
+		if ( ! $query->is_long_enough() ) {
+			// Answered without a request. One character matches most of the
+			// index, tells the visitor nothing, and costs a round trip on
+			// every keystroke.
+			return Result::success( new Suggestions( array(), $query->prefix() ) );
+		}
+
+		$result = $this->http->get( '/select', $this->suggester->translate( $query ) );
+
+		if ( $result->is_failure() ) {
+			return $result;
+		}
+
+		$body  = (array) $result->value( array() );
+		$docs  = $body['response']['docs'] ?? array();
+		$items = array();
+
+		foreach ( (array) $docs as $doc ) {
+			if ( ! is_array( $doc ) ) {
+				continue;
+			}
+
+			$title = $this->first_value( $doc['se_txt_title'] ?? '' );
+
+			if ( '' === $title ) {
+				continue;
+			}
+
+			$items[] = new Suggestion(
+				$title,
+				$this->first_value( $doc['se_s_url'] ?? '' ),
+				new DocumentRef(
+					$query->site_id(),
+					$this->first_value( $doc['se_s_object_type'] ?? 'post' ),
+					(int) $this->first_value( $doc['se_i_object'] ?? 0 )
+				),
+				$this->first_value( $doc['se_s_post_type'] ?? '' )
+			);
+		}
+
+		return Result::success(
+			new Suggestions(
+				$items,
+				$query->prefix(),
+				(int) ( $body['responseHeader']['QTime'] ?? 0 )
+			)
+		);
 	}
 
 	/**
@@ -598,5 +666,22 @@ final class SolrBackend implements SearchBackend, IndexBackend, SchemaBackend {
 		}
 
 		return $escaped;
+	}
+
+	/**
+	 * Read a field that may come back wrapped in an array.
+	 *
+	 * Solr returns an array for any field declared multi-valued, even when it
+	 * holds a single value.
+	 *
+	 * @param mixed $value Raw field value.
+	 * @return string
+	 */
+	private function first_value( $value ): string {
+		if ( is_array( $value ) ) {
+			$value = reset( $value );
+		}
+
+		return is_scalar( $value ) ? (string) $value : '';
 	}
 }

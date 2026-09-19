@@ -352,28 +352,25 @@ final class PostDocumentBuilder {
 	/**
 	 * Materialised ancestor paths for a term.
 	 *
-	 * A term at 12 > 34 > 56 yields "12", "12/34" and "12/34/56". Faceting on
-	 * this field with a prefix then returns exactly one level of the tree with
-	 * correct counts, in a single request.
+	 * A term at 12 > 34 > 56 yields "0/12", "1/12/34" and "2/12/34/56".
+	 * Faceting on this field with a prefix then returns exactly one level of
+	 * the tree, with counts that include everything below each child, in a
+	 * single request.
+	 *
+	 * The leading number is the depth, and it is what makes the top level
+	 * selectable at all: without it the root of the tree is "every path with no
+	 * slash in it", which a prefix cannot express, and the only alternative is
+	 * counting the whole tree and discarding most of it in PHP. Added in 0.6.0;
+	 * see the Phase 5 addendum to ADR-002. Documents written by an earlier
+	 * version carry the unprefixed form and need a reindex before hierarchical
+	 * facets find them.
 	 *
 	 * @param WP_Term $term     Term.
 	 * @param string  $taxonomy Taxonomy name.
 	 * @return string[]
 	 */
 	private function paths_for( WP_Term $term, string $taxonomy ): array {
-		$ancestors = get_ancestors( $term->term_id, $taxonomy, 'taxonomy' );
-		$lineage   = array_reverse( array_map( 'intval', $ancestors ) );
-		$lineage[] = (int) $term->term_id;
-
-		$paths = array();
-		$built = array();
-
-		foreach ( $lineage as $id ) {
-			$built[] = (string) $id;
-			$paths[] = implode( '/', $built );
-		}
-
-		return $paths;
+		return TermPaths::lineage( $term, $taxonomy );
 	}
 
 	/**

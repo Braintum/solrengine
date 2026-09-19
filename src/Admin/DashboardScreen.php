@@ -123,6 +123,14 @@ final class DashboardScreen {
 					);
 
 					$this->row(
+						__( 'Instant search', 'solrengine' ),
+						$config->get_bool( 'search.instant_enabled' )
+							? __( 'Active. Suggestions appear as visitors type.', 'solrengine' )
+							: __( 'Off.', 'solrengine' ),
+						$config->get_bool( 'search.instant_enabled' ) ? 'good' : 'idle'
+					);
+
+					$this->row(
 						__( 'Backend', 'solrengine' ),
 						null === $index
 							? __( 'Not reachable. Check the connection settings.', 'solrengine' )

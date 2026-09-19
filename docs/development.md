@@ -51,11 +51,35 @@ SOLRENGINE_TEST_SUITE=integration composer test:integration
 ## Solr for backend tests
 
 ```bash
-docker run --rm -p 8983:8983 solr:10
+docker run -d --rm --name solrengine-test -p 8983:8983 solr:10 solr-precreate wordpress
+
+SOLRENGINE_TEST_SUITE=backend SOLRENGINE_TEST_SOLR_URL=http://127.0.0.1:8983/solr \
+	vendor/bin/phpunit --testsuite backend
 ```
+
+The `solr-precreate wordpress` argument matters: a stock Solr starts with no
+cores at all, and the suite skips or fails against a server that has none. Set
+`SOLRENGINE_TEST_SOLR_COLLECTION` if you name yours something else.
+
+Without `SOLRENGINE_TEST_SOLR_URL` every test in the suite skips, so an
+unnoticed skip looks like a pass. Check the count.
 
 Both supported Solr lines are exercised in CI: 10.x as the recommended target
 and 9.10 as the last supported 9.x. See ADR-011.
+
+### Fixtures share one collection
+
+Each backend suite owns a block of two site identifiers — its own, and a
+neighbour it writes to in order to prove that one site's documents never reach
+another's results. The blocks must not overlap: two suites writing to one site
+pass alone and fail together, in whichever order they happen to run. Pick the
+next free block when adding a suite.
+
+| Suite | Sites |
+| --- | --- |
+| `QueryInjectionTest` | 501, 502 |
+| `SuggestTest` | 601, 602 |
+| `FacetTest` | 701, 702 |
 
 ## Layout
 

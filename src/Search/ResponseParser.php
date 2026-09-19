@@ -8,6 +8,9 @@
 namespace SolrEngine\Search;
 
 use SolrEngine\Contracts\DocumentRef;
+use SolrEngine\Contracts\FacetBucket;
+use SolrEngine\Contracts\FacetDefinition;
+use SolrEngine\Contracts\FacetResult;
 use SolrEngine\Contracts\SearchHit;
 use SolrEngine\Contracts\SearchQuery;
 use SolrEngine\Contracts\SearchResults;
@@ -26,6 +29,22 @@ use SolrEngine\Documents\DocumentFields;
  * @since 0.4.0
  */
 final class ResponseParser {
+
+	/**
+	 * Which facets may be counted, for labels and types.
+	 *
+	 * @var FacetRegistry
+	 */
+	private $facets;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param FacetRegistry|null $facets Registered facets.
+	 */
+	public function __construct( ?FacetRegistry $facets = null ) {
+		$this->facets = $facets ?? new FacetRegistry();
+	}
 
 	/**
 	 * Parse a select response.
@@ -55,12 +74,125 @@ final class ResponseParser {
 			}
 		}
 
-		return new SearchResults(
+		$results = new SearchResults(
 			$hits,
 			(int) ( $body['numFound'] ?? 0 ),
 			$query,
 			(int) ( $response['responseHeader']['QTime'] ?? 0 )
 		);
+
+		if ( ! $query->wants_facets() ) {
+			return $results;
+		}
+
+		return $results->with_facets( $this->to_facets( $response, $query ) );
+	}
+
+	/**
+	 * Read the facet section.
+	 *
+	 * Driven by what the query asked for rather than by what came back, so a
+	 * facet Solr answered with nothing still produces a result object. A filter
+	 * panel that dropped a control the moment its counts reached zero would
+	 * take away the one control a visitor needs in order to widen their own
+	 * search.
+	 *
+	 * @param array<string,mixed> $response Decoded response body.
+	 * @param SearchQuery         $query    The query that produced it.
+	 * @return array<string,FacetResult>
+	 */
+	private function to_facets( array $response, SearchQuery $query ): array {
+		$section = is_array( $response['facets'] ?? null ) ? $response['facets'] : array();
+		$filters = $query->filters();
+		$out     = array();
+
+		foreach ( $query->facets() as $key => $parent ) {
+			$key        = (string) $key;
+			$definition = $this->facets->get( $key );
+
+			if ( null === $definition ) {
+				continue;
+			}
+
+			$selected = array();
+
+			foreach ( (array) ( $filters[ $key ] ?? array() ) as $value ) {
+				if ( is_scalar( $value ) ) {
+					$selected[] = (string) $value;
+				}
+			}
+
+			$result = new FacetResult(
+				$key,
+				$definition->label(),
+				$definition->type(),
+				$this->buckets_for( $section[ $key ] ?? null, $definition, $selected )
+			);
+
+			$out[ $key ] = $result->with_selected( $selected )->with_parent( (string) $parent );
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Read one facet's buckets.
+	 *
+	 * @param mixed           $raw        Facet section for this key.
+	 * @param FacetDefinition $definition The facet.
+	 * @param string[]        $selected   Values the query filtered on.
+	 * @return FacetBucket[]
+	 */
+	private function buckets_for( $raw, FacetDefinition $definition, array $selected ): array {
+		if ( ! is_array( $raw ) || ! is_array( $raw['buckets'] ?? null ) ) {
+			return array();
+		}
+
+		$buckets = array();
+
+		foreach ( $raw['buckets'] as $bucket ) {
+			if ( ! is_array( $bucket ) || ! isset( $bucket['val'] ) || ! is_scalar( $bucket['val'] ) ) {
+				continue;
+			}
+
+			$count = (int) ( $bucket['count'] ?? 0 );
+
+			if ( $count <= 0 && FacetDefinition::RANGE !== $definition->type() ) {
+				// Solr already applies mincount to terms facets; this catches a
+				// zero that arrived anyway. Empty range bands are kept, because
+				// a price histogram with holes punched in it is misleading.
+				continue;
+			}
+
+			$value = $this->bucket_value( $bucket['val'] );
+
+			$buckets[] = ( new FacetBucket( $value, $count ) )
+				->with_selected( in_array( $value, $selected, true ) );
+		}
+
+		return $buckets;
+	}
+
+	/**
+	 * Render a bucket value as the string a caller sends back to filter by.
+	 *
+	 * @param scalar $value Raw value.
+	 * @return string
+	 */
+	private function bucket_value( $value ): string {
+		if ( is_bool( $value ) ) {
+			return $value ? 'true' : 'false';
+		}
+
+		if ( is_float( $value ) ) {
+			// Solr returns a range bucket's lower bound as a number, and PHP's
+			// default float rendering would turn 1200.0 into "1200" on one
+			// platform and "1.2E+3" on another. A filter value that varies by
+			// platform is a filter value that stops matching.
+			return rtrim( rtrim( number_format( $value, 4, '.', '' ), '0' ), '.' );
+		}
+
+		return (string) $value;
 	}
 
 	/**
