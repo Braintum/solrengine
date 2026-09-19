@@ -1,0 +1,32 @@
+# Files excluded from the distributed plugin package.
+# WordPress.org guideline: ship no tests, no examples, no build tooling,
+# no debug pages. See plan Appendix A item A15.
+
+.git
+.github
+.gitignore
+.distignore
+.editorconfig
+.claude
+.legacy
+
+# Development tooling
+composer.json
+composer.lock
+package.json
+package-lock.json
+phpcs.xml
+phpcs.xml.dist
+phpstan.neon
+phpstan.neon.dist
+phpunit.xml
+phpunit.xml.dist
+.phpunit.cache
+.phpunit.result.cache
+
+# Sources and tests
+tests
+bin
+docs
+assets/src
+node_modules

@@ -1,0 +1,138 @@
+<?xml version="1.0"?>
+<ruleset name="SolrEngine">
+	<description>Coding standards for the SolrEngine plugin.</description>
+
+	<!-- Everything the project owns is checked. There are no exempt files. -->
+	<file>solrengine.php</file>
+	<file>uninstall.php</file>
+	<file>src</file>
+	<file>tests</file>
+	<file>bin</file>
+
+	<!-- Never check third-party or build output. -->
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+	<exclude-pattern>*/node_modules/*</exclude-pattern>
+	<exclude-pattern>*/assets/build/*</exclude-pattern>
+	<exclude-pattern>*/build/*</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg name="basepath" value="."/>
+	<arg name="colors"/>
+	<arg name="parallel" value="8"/>
+	<arg value="sp"/>
+
+	<!-- WordPress Coding Standards. -->
+	<rule ref="WordPress">
+		<!--
+			PSR-4 autoloading requires class-matching filenames, which is
+			incompatible with the WordPress class-*.php convention.
+		-->
+		<exclude name="WordPress.Files.FileName"/>
+
+		<!--
+			Exception messages are not output. Escaping them with esc_html()
+			satisfies the sniff while being actively wrong: it applies an HTML
+			escaping function to a string that is logged, never rendered, and
+			it mangles the message for whoever has to read it. The 0.1.0
+			prototype did exactly that. SolrEngine instead guarantees that no
+			internal detail reaches a visitor, by returning Result objects with
+			stable machine codes across the integration boundary rather than
+			throwing (see src/Contracts/Result.php).
+		-->
+		<exclude name="WordPress.Security.EscapeOutput.ExceptionNotEscaped"/>
+
+		<!--
+			CapitalPDangit rewrites the string "wordpress" to "WordPress". It is
+			meant for prose, but it cannot tell prose from an identifier, and
+			phpcbf applies it silently. In this codebase "wordpress" is
+			routinely a value rather than a word: a Solr collection name, a
+			field value, a configuration key. It has already corrupted a test
+			assertion here by capitalising the expected value and leaving the
+			input alone, which turned a passing test into a failing one with no
+			visible cause.
+
+			Capitalisation in user-facing prose is checked in review and in
+			readme.txt instead, where the risk of a silent rewrite is absent.
+		-->
+		<exclude name="WordPress.WP.CapitalPDangit"/>
+	</rule>
+
+	<!--
+		Hook names are public API (plan section 11.3), so ValidHookName stays
+		enabled deliberately. So do ValidVariableName and ValidFunctionName:
+		the plan's Appendix B adopts snake_case members over the prototype's
+		camelCase, because Principle 9 favours WordPress ecosystem conventions.
+	-->
+
+	<!-- Everything the plugin puts in the global namespace carries this prefix. -->
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="solrengine"/>
+				<element value="SOLRENGINE"/>
+				<element value="SolrEngine"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="solrengine"/>
+			</property>
+		</properties>
+	</rule>
+
+	<!-- Minimum supported versions. See ADR-011. -->
+	<config name="minimum_wp_version" value="6.5"/>
+	<config name="testVersion" value="7.4-"/>
+	<rule ref="PHPCompatibilityWP"/>
+
+	<!--
+		Tests follow PHPUnit's conventions rather than WordPress's.
+
+		A test method name is its documentation: requiring a docblock above
+		test_ids_do_not_collide_across_sites() produces a comment that restates
+		the method name, which is noise that rots. Production code keeps every
+		one of these rules.
+	-->
+	<rule ref="Squiz.Commenting.FunctionComment">
+		<exclude-pattern>*/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FunctionCommentThrowTag">
+		<exclude-pattern>*/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Generic.Commenting.DocComment.MissingShort">
+		<exclude-pattern>*/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<exclude-pattern>*/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.PHP.DevelopmentFunctions">
+		<exclude-pattern>*/tests/*</exclude-pattern>
+	</rule>
+	<!--
+		Scripts under bin/ are standalone CLI tools. They never load inside
+		WordPress, so the sniffs that protect WordPress's global namespace and
+		its HTML output do not apply: their variables are script-scoped, and
+		their output goes to a terminal rather than a browser.
+
+		Everything that still matters for a CLI script stays on, which is why
+		bin/ is linted at all rather than excluded outright. A real collision
+		was found and fixed this way: check-version.php used $plugin, which is
+		a genuine WordPress global.
+	-->
+	<rule ref="WordPress.WP.AlternativeFunctions">
+		<exclude-pattern>*/tests/*</exclude-pattern>
+		<exclude-pattern>*/bin/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<exclude-pattern>*/bin/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.Security.EscapeOutput">
+		<exclude-pattern>*/bin/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.PHP.DevelopmentFunctions">
+		<exclude-pattern>*/bin/*</exclude-pattern>
+	</rule>
+</ruleset>

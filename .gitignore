@@ -1,94 +1,53 @@
-# Composer
+# Dependencies. vendor/ is built in CI for the release artifact and is not
+# tracked; composer.lock IS tracked, so builds are reproducible (plan defect #24).
 /vendor/
+/node_modules/
 composer.phar
-composer.lock
 
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
-yarn.lock
+# Build output
+/assets/build/
+/build/
+/dist/
+*.zip
+*.tar.gz
 
-# IDE and Editor files
+# Tooling caches and local overrides
+.phpunit.cache/
+.phpunit.result.cache
+.phpcs.cache
+.php-cs-fixer.cache
+/phpstan.neon
+/phpunit.xml
+/.cache/
+
+# Local WordPress test library
+/tmp/
+
+# Logs
+*.log
+debug.log
+error.log
+
+# Editors and OS
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 .DS_Store
-Thumbs.db
-
-# Logs
-*.log
-logs/
-debug.log
-error.log
-
-# Temporary files
-*.tmp
-*.temp
-.tmp/
-.temp/
-
-# Build artifacts
-build/
-dist/
-.build/
-
-# Testing
-coverage/
-.phpunit.result.cache
-.phpunit.cache
-tests/_output/
-tests/_support/_generated/
-
-# Environment files
-.env
-.env.local
-.env.production
-.env.staging
-.env.development
-
-# OS generated files
-.DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
-ehthumbs.db
 Thumbs.db
+ehthumbs.db
 
-# PHP
-*.php~
-.php_cs.cache
-.phpcs.cache
-
-# Documentation generation
-docs/build/
-docs/_build/
-
-# Plugin specific
-plugin-config.php
+# Environment and local configuration
+.env
+.env.*
 local-config.php
+plugin-config.php
 
-# Backup files
+# Backups
 *.bak
 *.backup
-*~
-
-# Archive files
-*.zip
-*.tar.gz
-*.rar
-
-# Cache
-.cache/
-.sass-cache/
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock

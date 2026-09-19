@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+	bootstrap="tests/bootstrap.php"
+	colors="true"
+	beStrictAboutTestsThatDoNotTestAnything="true"
+	beStrictAboutOutputDuringTests="true"
+	failOnWarning="true"
+	failOnRisky="true"
+	convertDeprecationsToExceptions="true"
+	cacheResultFile=".phpunit.cache/result">
+
+	<testsuites>
+		<!--
+			Unit tests load no WordPress and contact no Solr. The plan (section 11.1)
+			requires the domain layer to be testable in isolation; if this suite ever
+			needs a WordPress function, a seam has leaked.
+		-->
+		<testsuite name="unit">
+			<directory suffix="Test.php">tests/Unit</directory>
+		</testsuite>
+
+		<!-- Requires the WordPress test library. See bin/install-wp-tests.sh. -->
+		<testsuite name="integration">
+			<directory suffix="Test.php">tests/Integration</directory>
+		</testsuite>
+
+		<!-- Requires WordPress and a reachable Solr. -->
+		<testsuite name="backend">
+			<directory suffix="Test.php">tests/Backend</directory>
+		</testsuite>
+	</testsuites>
+
+	<coverage>
+		<include>
+			<directory suffix=".php">src</directory>
+		</include>
+	</coverage>
+</phpunit>

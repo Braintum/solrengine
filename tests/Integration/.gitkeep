@@ -1,0 +1,2 @@
+WordPress integration tests. Requires the WordPress test library; run
+bin/install-wp-tests.sh first. Populated from Phase 1.

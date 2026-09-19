@@ -1,0 +1,19 @@
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: 5
+
+    paths:
+        - solrengine.php
+        - uninstall.php
+        - src
+
+    bootstrapFiles:
+        - tests/phpstan-bootstrap.php
+
+    treatPhpDocTypesAsCertain: false
+
+    # No baseline file. The plan's Appendix B requires ratcheting the level
+    # upward rather than silently suppressing findings, so new violations must
+    # be fixed rather than recorded.

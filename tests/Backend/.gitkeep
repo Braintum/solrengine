@@ -1,0 +1,2 @@
+Tests that exercise a real search backend. Requires WordPress and a reachable
+Solr (docker run --rm -p 8983:8983 solr:10). Populated from Phase 1.
