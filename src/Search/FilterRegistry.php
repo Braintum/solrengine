@@ -31,7 +31,7 @@ final class FilterRegistry {
 	/**
 	 * Registered filters keyed by public key.
 	 *
-	 * @var array<string,array{field:string,type:string,label:string,gap:float}>
+	 * @var array<string,array{field:string,type:string,label:string,gap:float,range:bool,exclude:bool}>
 	 */
 	private $filters = array();
 
@@ -119,10 +119,12 @@ final class FilterRegistry {
 		}
 
 		$this->filters[ $key ] = array(
-			'field' => $field,
-			'type'  => $type,
-			'label' => '' !== $label ? $label : $key,
-			'gap'   => 0.0,
+			'field'   => $field,
+			'type'    => $type,
+			'label'   => '' !== $label ? $label : $key,
+			'gap'     => 0.0,
+			'range'   => false,
+			'exclude' => false,
 		);
 	}
 
@@ -153,6 +155,58 @@ final class FilterRegistry {
 
 		if ( isset( $this->filters[ $key ] ) ) {
 			$this->filters[ $key ]['gap'] = $gap;
+		}
+	}
+
+	/**
+	 * Register a filter whose values name an arbitrary numeric range.
+	 *
+	 * Distinct from a banded filter, which only accepts bands the server
+	 * declared. This accepts a pair of numbers, because a price slider is a
+	 * pair of numbers and pretending otherwise would mean refusing to answer
+	 * the query WooCommerce's own widget produces.
+	 *
+	 * It is still not a free filter query: the field is chosen here, both
+	 * bounds must parse as numbers, and an unparseable pair yields no clause
+	 * at all. The values are never interpolated as text.
+	 *
+	 * @since 0.7.0
+	 *
+	 * @param string $key   Public key a caller uses.
+	 * @param string $field Index field it maps to.
+	 * @param string $label Human label for a UI.
+	 * @return void
+	 */
+	public function register_range( string $key, string $field, string $label = '' ): void {
+		$this->register( $key, $field, FieldType::FLOAT, $label );
+
+		if ( isset( $this->filters[ $key ] ) ) {
+			$this->filters[ $key ]['range'] = true;
+		}
+	}
+
+	/**
+	 * Register a filter that removes matches rather than requiring them.
+	 *
+	 * The clause it builds is negative, which means it also matches every
+	 * document that does not carry the field at all. That is exactly what a
+	 * rule like "not hidden from search" needs: it has to narrow products
+	 * without touching posts, pages, or anything else in the same index, and a
+	 * positive clause would quietly delete all of them from the results.
+	 *
+	 * @since 0.7.0
+	 *
+	 * @param string $key   Public key a caller uses.
+	 * @param string $field Index field it maps to.
+	 * @param string $type  Value type, from FieldType.
+	 * @param string $label Human label for a UI.
+	 * @return void
+	 */
+	public function register_excluding( string $key, string $field, string $type, string $label = '' ): void {
+		$this->register( $key, $field, $type, $label );
+
+		if ( isset( $this->filters[ $key ] ) ) {
+			$this->filters[ $key ]['exclude'] = true;
 		}
 	}
 
@@ -196,9 +250,10 @@ final class FilterRegistry {
 	 *
 	 * @param string            $key    Filter key.
 	 * @param array<int,scalar> $values Values to match.
+	 * @param string            $mode   "or" for any value, "and" for all of them.
 	 * @return string
 	 */
-	public function clause_for( string $key, array $values ): string {
+	public function clause_for( string $key, array $values, string $mode = 'or' ): string {
 		if ( ! isset( $this->filters[ $key ] ) || array() === $values ) {
 			return '';
 		}
@@ -207,6 +262,10 @@ final class FilterRegistry {
 
 		if ( $filter['gap'] > 0.0 ) {
 			return $this->band_clause( $filter, $values );
+		}
+
+		if ( ! empty( $filter['range'] ) ) {
+			return $this->range_clause( $filter, $values );
 		}
 
 		$rendered = array();
@@ -234,9 +293,22 @@ final class FilterRegistry {
 			return '';
 		}
 
-		// Multiple values for one key are an OR: picking two categories means
-		// "in either", which is what a shopper ticking two boxes expects.
-		return $filter['field'] . ':(' . implode( ' OR ', $rendered ) . ')';
+		// Multiple values for one key are an OR by default: picking two
+		// categories means "in either", which is what a shopper ticking two
+		// boxes expects. A conjunction means "has both", which is what
+		// WooCommerce's layered navigation means by default and what makes
+		// "16 GB and SSD" return the products that are both.
+		$join   = 'and' === $mode ? ' AND ' : ' OR ';
+		$clause = $filter['field'] . ':(' . implode( $join, $rendered ) . ')';
+
+		if ( empty( $filter['exclude'] ) ) {
+			return $clause;
+		}
+
+		// Negated, and deliberately paired with a match-all: a filter query
+		// that is nothing but a negation matches nothing in Solr, which would
+		// turn "hide out-of-stock products" into "hide everything".
+		return '*:* -' . $clause;
 	}
 
 	/**
@@ -247,8 +319,8 @@ final class FilterRegistry {
 	 * appear under both "1100 to 1200" and "1200 to 1300", and the counts
 	 * beside those bands would not add up to the total.
 	 *
-	 * @param array{field:string,type:string,label:string,gap:float} $filter Filter definition.
-	 * @param array<int,scalar>                                      $values Band lower bounds.
+	 * @param array{field:string,type:string,label:string,gap:float,range:bool,exclude:bool} $filter Filter definition.
+	 * @param array<int,scalar>                                                              $values Band lower bounds.
 	 * @return string
 	 */
 	private function band_clause( array $filter, array $values ): string {
@@ -266,6 +338,58 @@ final class FilterRegistry {
 				$filter['field'],
 				self::number( $start ),
 				self::number( $start + $filter['gap'] )
+			);
+		}
+
+		if ( array() === $clauses ) {
+			return '';
+		}
+
+		return 1 === count( $clauses ) ? $clauses[0] : '(' . implode( ' OR ', $clauses ) . ')';
+	}
+
+	/**
+	 * Build the clause for a bounded numeric range.
+	 *
+	 * Values arrive as "min:max", with either side allowed to be empty for an
+	 * open bound. Anything that does not parse as a number produces no clause,
+	 * because a half-understood price filter is worse than none: it would show
+	 * a shopper a filtered page that is not filtered.
+	 *
+	 * @param array{field:string,type:string,label:string,gap:float,range:bool,exclude:bool} $filter Filter definition.
+	 * @param array<int,scalar>                                                              $values Range expressions.
+	 * @return string
+	 */
+	private function range_clause( array $filter, array $values ): string {
+		$clauses = array();
+
+		foreach ( $values as $value ) {
+			if ( ! is_scalar( $value ) || is_bool( $value ) ) {
+				continue;
+			}
+
+			$parts = explode( ':', (string) $value );
+
+			if ( 2 !== count( $parts ) ) {
+				continue;
+			}
+
+			$min = trim( $parts[0] );
+			$max = trim( $parts[1] );
+
+			if ( ( '' !== $min && ! is_numeric( $min ) ) || ( '' !== $max && ! is_numeric( $max ) ) ) {
+				continue;
+			}
+
+			if ( '' === $min && '' === $max ) {
+				continue;
+			}
+
+			$clauses[] = sprintf(
+				'%s:[%s TO %s]',
+				$filter['field'],
+				'' === $min ? '*' : self::number( (float) $min ),
+				'' === $max ? '*' : self::number( (float) $max )
 			);
 		}
 

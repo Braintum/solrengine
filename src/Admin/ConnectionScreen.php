@@ -12,6 +12,7 @@ use SolrEngine\Diagnostics\ConnectionDiagnostic;
 use SolrEngine\Diagnostics\DiagnosticReport;
 use SolrEngine\Schema\ContractRegistry;
 use SolrEngine\Schema\SchemaExporter;
+use SolrEngine\Integration\WooCommerce\WooCommerce;
 use SolrEngine\Search\FacetRegistry;
 use SolrEngine\Support\Config;
 use SolrEngine\Support\Credentials;
@@ -170,6 +171,7 @@ final class ConnectionScreen {
 		$this->config->set( 'connection.verify_tls', $verify_tls );
 		$this->config->set( 'search.enabled', ! empty( $_POST['search_enabled'] ) );
 		$this->config->set( 'search.instant_enabled', ! empty( $_POST['instant_enabled'] ) );
+		$this->config->set( 'search.shop_enabled', ! empty( $_POST['shop_enabled'] ) );
 
 		$notice = 'saved';
 
@@ -384,6 +386,26 @@ final class ConnectionScreen {
 							</p>
 						</td>
 					</tr>
+
+					<?php if ( WooCommerce::is_active() ) : ?>
+						<tr>
+							<th scope="row"><?php esc_html_e( 'Shop and product pages', 'solrengine' ); ?></th>
+							<td>
+								<label>
+									<input
+										type="checkbox"
+										name="shop_enabled"
+										value="1"
+										<?php checked( $this->config->get_bool( 'search.shop_enabled' ) ); ?>
+									/>
+									<?php esc_html_e( 'Answer shop, category and product searches from the index', 'solrengine' ); ?>
+								</label>
+								<p class="description">
+									<?php esc_html_e( 'Products are indexed either way. This decides whether WooCommerce asks Solr for them. A query SolrEngine cannot express exactly — a rating filter, or one an extension added — is handed back to WooCommerce rather than answered approximately.', 'solrengine' ); ?>
+								</p>
+							</td>
+						</tr>
+					<?php endif; ?>
 
 					<tr>
 						<th scope="row"><?php esc_html_e( 'Instant search', 'solrengine' ); ?></th>

@@ -1967,7 +1967,7 @@ Each phase ends in something demonstrable. No phase is "refactoring".
 | **→ v1.0 to WordPress.org** | | Security review, Plugin Check clean, documentation, disclosure of external services | |
 | **P4 — Suggest and instant search** ✅ | Autocomplete in the theme's search box | Suggester configuration and scheduled build, `suggest` endpoint, accessible front-end component, caching | Medium — §19.4 |
 | **P5 — Facets** ✅ | Generic faceted search | Facet registry, JSON Facet translation, multi-select, hierarchical taxonomy facets, `facets` endpoint, filter blocks and shortcodes | Medium |
-| **P6 — WooCommerce** | Fast product search and catalogue filtering | Product and variation mapping, visibility rules, price and attribute facets, Product Collection block integration, classic shop loop integration | **High — §15.4, §15.6** |
+| **P6 — WooCommerce** ✅ | Fast product search and catalogue filtering | Product and variation mapping, visibility rules, price and attribute facets, Product Collection block integration, classic shop loop integration | **High — §15.4, §15.6** |
 | **P7 — Advanced administration** | Power users stop needing the filesystem | Field mapping UI, relevance tuning, schema migration UX, alias-based zero-downtime reindex, index history | Medium |
 | **P8 — Multisite and multilingual** | Networks and non-English sites | Network configuration, per-site scope UI, language fields and analyzers, WPML and Polylang integration | Medium |
 | **P9 — Cloud backend** | A second adapter proves the abstraction | Cloud adapter, sign-up and key management, privacy disclosure, migration between backends | High — a product, not a feature |
@@ -2290,10 +2290,103 @@ showing a filter panel costs one extra Solr round trip; a page without one costs
 nothing. The alternative — counting facets on every search in case something
 later renders a panel — taxes every site that never uses the feature.
 
+
+### 25.7 Phase 6 status — complete, 2026-09-20, shipped as 0.7.0
+
+The hardest phase after indexing, and the one with the most ways to be quietly
+wrong. 288 unit tests and 69 backend tests pass, alongside coding standards,
+static analysis, ESLint and the version check, and the whole integration was
+exercised against a real WooCommerce 11.1 store.
+
+| Deliverable | State |
+| --- | --- |
+| Product and variation mapping | Done. Parent documents, variation prices, stock and SKUs denormalised |
+| CRUD-only reads | Done. No post meta is read anywhere in the integration |
+| Bucketed availability, exact stock opt-in | Done |
+| Visibility rules, server-side and unconditional | Done, on every path that reads the index |
+| Price, availability, on-sale and attribute facets | Done, with bands derived from the catalogue |
+| Classic shop loop integration | Done, through `woocommerce_product_query` |
+| Product Collection block integration | Done, through `query_loop_block_query_vars`. See below |
+| WooCommerce events, coalesced through the dirty set | Done |
+| Documentation | `docs/woocommerce.md`, plus updates to search, indexing, security and architecture |
+| Multi-currency (F-56) | Not built. Marked Future in section 6.2 and documented as unsupported |
+
+**A researched fact in §15.6 was wrong, and only reading WooCommerce's source
+found it.** There is no `woocommerce_product_collection_build_query` filter in
+WooCommerce 11.1 — the block's only extension surface is a registry of *named
+collections*, which cannot redirect somebody else's query. The block turns out
+to build its query through WordPress's own `query_loop_block_query_vars` and
+then run an ordinary `WP_Query`, so it is integrated through the same
+`posts_pre_query` substitution as everything else, standing on a core
+WordPress filter rather than a WooCommerce internal. Verified by rendering a
+real Product Collection block against a real catalogue. Recorded as a Phase 6
+addendum to ADR-006.
+
+**The rule that shaped the phase: answer exactly, or not at all.** A shop query
+can carry a rating filter, a hand-picked product list, a meta query, or an
+ordering an extension invented. Anything SolrEngine cannot express exactly is
+handed back to WordPress, which answers it from the database. Slower, and
+right: a shop page that looks filtered and is not costs a merchant money, and
+there is no honest halfway position. The refusal path is asserted in unit tests
+and was confirmed live — a `rating_filter` URL returns the database's answer,
+not Solr's.
+
+**WooCommerce's layered navigation means AND, and assuming otherwise would have
+been silently wrong.** Its default query type is `and`: two chosen values of one
+attribute mean a product having both. Every filter this plugin had built until
+now was a disjunction, which would have returned products the shopper had just
+excluded. `SearchQuery` now carries a combining mode per filter, the default
+stays "or" — which is what ticking two category boxes means — and the store's
+own `woocommerce_layered_nav_default_query_type` setting is read rather than
+assumed. Both modes verified against a live catalogue.
+
+**Visibility needed inverting.** The first design indexed the contexts a
+product *may* appear in and filtered positively. That deletes every post and
+page from search, because none of them carries the field — and it would have
+done so the day a site activated WooCommerce, until somebody reindexed. The
+index stores what a product is excluded *from* instead, and queries filter with
+a negation, which matches every document that has no such field. Blog content
+is untouched, no reindex is needed, and a backend test asserts precisely this.
+
+**Four defects found and fixed, three of them in earlier phases.** A full sync
+read the configured post types directly while the save listeners applied
+`solrengine_indexable_post_types`, so content an integration declared reached
+the index on save and vanished on the next full sync. The REST endpoint had the
+same split and answered a request for products with the whole site. Both now
+come from one place. The third was mine and immediate: building the filter
+registry ran a product query, which re-entered the container through
+`pre_get_posts` and deadlocked it on the first live request. The price-ceiling
+lookup now happens after the response, and the search integration decides
+eligibility before constructing anything — which also stops it building a
+backend for every menu and widget query on a page.
+
+The fourth was found while chasing the third, and is the same shape: registering
+the REST routes constructed the search service, and constructing that validates
+the endpoint with a DNS lookup. `rest_api_init` fires on far more requests than
+anyone calling a SolrEngine route — on a shop it fires for every cart and
+checkout block request through the Store API — so every one of them paid for a
+backend nobody used. The controller now takes a factory and resolves it when a
+request actually reaches one of its routes.
+
+**Phase 6 needs no schema change.** Every product field follows the naming
+convention from the Phase 1 addendum to ADR-002, so each one lands in a dynamic
+field that already exists. The plan's §15.2 still spells them the old way
+(`se_wc_price_min_f`); the corrected form is `se_f_wc_price_min`. Searchability
+for SKUs and attribute values comes from the relevance profile rather than from
+new copy-field rules, which is the same reasoning: `qf` takes explicit field
+names, and adding two of them costs nothing at query time and no migration at
+all.
+
 Ordering rationale worth recording: **P5 precedes P6 deliberately.** WooCommerce filtering is the
 strongest commercial signal (§6, Dana), but it is built out of generic faceting. Building facets
 inside the WooCommerce integration would produce a facet engine that only works for products, and
 then a second one later.
+
+*In hindsight the ordering paid off twice over.* Phase 6 registered its facets into the registry
+Phase 5 built and added no faceting machinery of its own — except two things every facet consumer
+now has: a combining mode, so a filter can mean "all of these" rather than "any of these", and an
+excluding filter, so a rule can narrow one kind of content without deleting every other kind from
+the results. Both were found by WooCommerce and both belong in the generic layer.
 
 ---
 

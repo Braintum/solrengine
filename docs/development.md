@@ -67,6 +67,18 @@ unnoticed skip looks like a pass. Check the count.
 Both supported Solr lines are exercised in CI: 10.x as the recommended target
 and 9.10 as the last supported 9.x. See ADR-011.
 
+## WooCommerce tests
+
+`tests/Integration/ProductDocumentTest.php` maps real products through real
+WooCommerce CRUD — a variable product's price range, an attribute's terms, a
+hidden product's refusal — none of which can be faked convincingly.
+
+It skips unless WooCommerce is loaded, which the test library does not do on
+its own. To run it, install WooCommerce into the WordPress test library's
+plugin directory and require its entry point alongside the plugin in
+`tests/bootstrap.php`. That is not wired into CI yet, so the suite is currently
+green by skipping there.
+
 ### Fixtures share one collection
 
 Each backend suite owns a block of two site identifiers — its own, and a
@@ -80,6 +92,7 @@ next free block when adding a suite.
 | `QueryInjectionTest` | 501, 502 |
 | `SuggestTest` | 601, 602 |
 | `FacetTest` | 701, 702 |
+| `ProductQueryTest` | 801, 802 |
 
 ## Layout
 

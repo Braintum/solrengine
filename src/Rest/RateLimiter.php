@@ -69,7 +69,7 @@ final class RateLimiter {
 	 * @return bool
 	 */
 	public function is_effective(): bool {
-		return wp_using_ext_object_cache();
+		return (bool) wp_using_ext_object_cache();
 	}
 
 	/**

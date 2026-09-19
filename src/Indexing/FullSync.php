@@ -11,6 +11,7 @@ use SolrEngine\Contracts\DocumentRef;
 use SolrEngine\Contracts\JobQueue;
 use SolrEngine\Contracts\Logger;
 use SolrEngine\Contracts\Result;
+use SolrEngine\Documents\IndexedTypes;
 use SolrEngine\Support\Config;
 
 /**
@@ -129,9 +130,12 @@ final class FullSync {
 			return Result::failure( 'already_running', __( 'A synchronisation is already running.', 'solrengine' ) );
 		}
 
-		$types = array() !== $post_types
-			? $post_types
-			: array_map( 'strval', $this->config->get_array( 'index.post_types', array( 'post', 'page' ) ) );
+		// An explicit list — `wp solrengine index --post-type=product` — is
+		// honoured as given, because somebody asked for it by name. Otherwise
+		// the site's own answer, which is the same answer the save listeners
+		// use: when those two disagree, content reaches the index when it is
+		// edited and vanishes from it on the next full sync.
+		$types = array() !== $post_types ? $post_types : IndexedTypes::all( $this->config );
 
 		if ( array() === $types ) {
 			return Result::failure( 'no_post_types', __( 'No post types are configured for indexing.', 'solrengine' ) );

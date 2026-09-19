@@ -120,6 +120,72 @@ final class FilterRegistryTest extends TestCase {
 		$this->assertSame( '', $registry->clause_for( 'price', array( '100 TO *]' ) ) );
 	}
 
+	// -- Conjunctions and exclusions ----------------------------------------
+
+	public function test_values_can_be_required_together(): void {
+		$registry = new FilterRegistry();
+
+		$registry->register( 'pa_color', 'se_is_wc_attr_pa_color', FieldType::INT, 'Colour' );
+
+		// WooCommerce's layered navigation means "has both" by default, and a
+		// disjunction would return products the shopper excluded.
+		$this->assertSame(
+			'se_is_wc_attr_pa_color:(21 AND 22)',
+			$registry->clause_for( 'pa_color', array( 21, 22 ), 'and' )
+		);
+	}
+
+	public function test_an_excluding_filter_removes_matches_without_removing_everything_else(): void {
+		$registry = new FilterRegistry();
+
+		$registry->register_excluding( 'context', 'se_ss_wc_excluded_from', FieldType::STRING, 'Context' );
+
+		// Negated, so it also matches every document that has no such field —
+		// posts, pages, and products with nothing to hide. Paired with a
+		// match-all, because a filter query that is only a negation matches
+		// nothing at all in Solr.
+		$this->assertSame(
+			'*:* -se_ss_wc_excluded_from:(search)',
+			$registry->clause_for( 'context', array( 'search' ) )
+		);
+	}
+
+	// -- Bounded ranges ------------------------------------------------------
+
+	public function test_a_range_filter_accepts_a_pair_of_numbers(): void {
+		$registry = new FilterRegistry();
+
+		$registry->register_range( 'price_range', 'se_f_wc_price_min', 'Price' );
+
+		$this->assertSame(
+			'se_f_wc_price_min:[10 TO 250]',
+			$registry->clause_for( 'price_range', array( '10:250' ) )
+		);
+	}
+
+	public function test_a_range_bound_may_be_left_open(): void {
+		$registry = new FilterRegistry();
+
+		$registry->register_range( 'price_range', 'se_f_wc_price_min', 'Price' );
+
+		$this->assertSame(
+			'se_f_wc_price_min:[10 TO *]',
+			$registry->clause_for( 'price_range', array( '10:' ) )
+		);
+	}
+
+	public function test_a_range_refuses_anything_that_is_not_a_number(): void {
+		$registry = new FilterRegistry();
+
+		$registry->register_range( 'price_range', 'se_f_wc_price_min', 'Price' );
+
+		// The one filter that accepts caller-supplied numbers, so this is
+		// where a caller would try to smuggle syntax in.
+		$this->assertSame( '', $registry->clause_for( 'price_range', array( '10 TO *] OR se_s_visibility:[* TO *' ) ) );
+		$this->assertSame( '', $registry->clause_for( 'price_range', array( '*:*' ) ) );
+		$this->assertSame( '', $registry->clause_for( 'price_range', array( ':' ) ) );
+	}
+
 	public function test_a_band_needs_a_gap(): void {
 		$registry = new FilterRegistry();
 

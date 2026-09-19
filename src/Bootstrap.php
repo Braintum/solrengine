@@ -17,6 +17,7 @@ use SolrEngine\Cli\Commands;
 use SolrEngine\Contracts\JobQueue;
 use SolrEngine\Contracts\Logger;
 use SolrEngine\Diagnostics\ConnectionDiagnostic;
+use SolrEngine\Documents\IndexedTypes;
 use SolrEngine\Documents\MetaAllowlist;
 use SolrEngine\Documents\PostDocumentBuilder;
 use SolrEngine\Indexing\DirtySet;
@@ -30,9 +31,11 @@ use SolrEngine\Indexing\Reconciler;
 use SolrEngine\Integration\WordPress\InstantSearch;
 use SolrEngine\Integration\WordPress\QueryIntegration;
 use SolrEngine\Integration\WordPress\SearchFilters;
+use SolrEngine\Integration\WooCommerce\WooCommerce;
 use SolrEngine\Rest\RateLimiter;
 use SolrEngine\Rest\SearchController;
 use SolrEngine\Rest\StatusController;
+use SolrEngine\Integration\WooCommerce\ProductFields;
 use SolrEngine\Search\FacetRegistry;
 use SolrEngine\Search\FilterRegistry;
 use SolrEngine\Search\QueryTranslator;
@@ -355,7 +358,12 @@ final class Bootstrap {
 			'search.relevance',
 			static function ( Container $c ): RelevanceProfile {
 				return RelevanceProfile::from_config(
-					$c->get( 'config' )->get_array( 'search.relevance', array() )
+					$c->get( 'config' )->get_array( 'search.relevance', array() ),
+					// A shop searches for things a blog does not: a SKU is an
+					// exact answer to an exact question, and an attribute value
+					// is what a shopper types when they do not know the product
+					// name. Neither field exists on a site without WooCommerce.
+					WooCommerce::is_active() ? ProductFields::relevance_boosts() : array()
 				);
 			}
 		);
@@ -547,6 +555,7 @@ final class Bootstrap {
 		$this->register_indexing( $container );
 		$this->register_search( $container );
 		$this->register_filters_ui( $container );
+		$this->register_woocommerce( $container );
 		$this->register_rest( $container );
 
 		if ( is_admin() ) {
@@ -664,7 +673,7 @@ final class Bootstrap {
 		$listeners = new HookListeners(
 			$dirty,
 			$container->get( 'meta_allowlist' ),
-			array_map( 'strval', $config->get_array( 'index.post_types', array( 'post', 'page' ) ) ),
+			IndexedTypes::all( $config ),
 			(int) $container->get( 'site_id' )
 		);
 
@@ -817,6 +826,16 @@ final class Bootstrap {
 		add_action(
 			'pre_get_posts',
 			static function ( $query ) use ( $resolve ): void {
+				// The cheap half of the eligibility test, before anything is
+				// constructed. pre_get_posts fires for every menu, widget and
+				// related-posts query on a page; building a search backend for
+				// each of them would cost an endpoint validation apiece, and
+				// building one *during* another query is how the container
+				// ends up resolving itself.
+				if ( ! $query instanceof \WP_Query || ! $query->is_main_query() || ! $query->is_search() ) {
+					return;
+				}
+
 				$integration = $resolve();
 
 				if ( null !== $integration ) {
@@ -834,6 +853,49 @@ final class Bootstrap {
 			},
 			10,
 			2
+		);
+	}
+
+	/**
+	 * Attach the WooCommerce integration.
+	 *
+	 * On init, and for two reasons. WooCommerce loads its own functions during
+	 * plugins_loaded, so asking whether it is there any earlier is a race this
+	 * plugin would sometimes lose. And its attribute taxonomies, which the
+	 * facet registry is built from, do not exist until init either.
+	 *
+	 * @param Container $container Service container.
+	 * @return void
+	 */
+	private function register_woocommerce( Container $container ): void {
+		add_action(
+			'init',
+			static function () use ( $container ): void {
+				if ( ! WooCommerce::is_active() ) {
+					return;
+				}
+
+				$config = $container->get( 'config' );
+
+				if ( ! $config instanceof Config ) {
+					return;
+				}
+
+				WooCommerce::attach_registries();
+
+				WooCommerce::attach(
+					$config,
+					$container->get( 'indexing.dirty' ),
+					static function () use ( $container ) {
+						return $container->get( 'search.service' );
+					},
+					static function () use ( $container ) {
+						return $container->get( 'search.filters' );
+					},
+					(int) $container->get( 'site_id' )
+				);
+			},
+			0
 		);
 	}
 
@@ -900,7 +962,9 @@ final class Bootstrap {
 				}
 
 				( new SearchController(
-					$container->get( 'search.service' ),
+					static function () use ( $container ) {
+						return $container->get( 'search.service' );
+					},
 					$container->get( 'search.filters' ),
 					$container->get( 'search.facets' ),
 					$config,

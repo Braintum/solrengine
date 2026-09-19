@@ -85,3 +85,72 @@ The shopper's mental model is products, not variations, and the index should mat
 alternative that indexes variations directly produces counts that are defensible to an engineer and
 wrong to a merchant. The CRUD-only rule is not style: it is the difference between an integration
 that survives WooCommerce's storage roadmap and one that silently empties.
+
+---
+
+## Addendum, 2026-09-20 — Phase 6 built it, and one researched fact was wrong
+
+**Status:** the decision held in full. Parent-centric documents, CRUD-only
+reads, bucketed stock and server-side visibility all survived contact with a
+real store. One integration point named in the Context section does not exist.
+
+### `woocommerce_product_collection_build_query` is not a filter
+
+The Context above records it as the place "for developers to implement custom
+query generation". In WooCommerce 11.1 there is no such filter anywhere in the
+plugin. What exists is a registry of *named collections*: an extension can
+register a handler for a collection it owns, which is a different thing and no
+use for redirecting somebody else's query.
+
+The Product Collection block builds its query through WordPress's own
+`query_loop_block_query_vars` filter and then runs an ordinary `WP_Query`. So
+the block is integrated the same way everything else is — by marking the query
+variables and substituting results in `posts_pre_query` — and the integration
+rests on a core WordPress filter rather than on a WooCommerce internal. That is
+a better place to stand: verified by rendering a real Product Collection block
+against a real catalogue, and it is the same mechanism the classic shop loop
+and site search already use.
+
+`woocommerce_product_query` does exist, as an action, and is used as planned.
+
+### Refusal as a design rule
+
+The decision said to integrate through WooCommerce's hooks. Building it
+surfaced the harder question: what to do with a query carrying a constraint the
+index cannot express — a rating filter, a hand-picked product list, a meta
+query, an ordering from an extension.
+
+The rule adopted is **answer exactly or not at all**. Anything not fully
+understood goes back to WordPress, which answers it from the database. A shop
+page that looks filtered and is not costs a merchant money, and there is no
+honest halfway position: a partly applied filter is a wrong page served fast.
+
+### Layered navigation combines with AND
+
+WooCommerce's layered navigation defaults to `and` — two chosen values of one
+attribute mean a product having both — via
+`woocommerce_layered_nav_default_query_type`. A disjunction, which is what
+every other filter in this plugin builds, would have returned products the
+shopper had just excluded.
+
+The filter registry therefore gained a combining mode, and `SearchQuery` now
+carries one per filter. The default stays "or", which is what ticking two
+category boxes means; "and" is what a shop asks for, and the store's own
+setting is read rather than assumed.
+
+### Prices: single-valued, and why
+
+A variable product priced from 50 to 500 is indexed with a minimum and a
+maximum, and the price facet counts and filters on the **minimum**. WooCommerce
+itself matches such a product against any band overlapping its range, because
+its `_price` meta has one row per variation.
+
+Matching the overlap would need a multi-valued price field, which the schema
+contract does not have — and, more importantly, it would break the property
+Phase 5 established: a facet count must equal the number of results clicking it
+produces. An overlap filter with a single-valued facet field disagrees with
+itself. The single-valued form keeps count and page in agreement, and the
+limitation is documented rather than discovered.
+
+A multi-valued price field is the obvious contract-version-2 change if merchants
+ask for overlap semantics.

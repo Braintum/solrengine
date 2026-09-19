@@ -14,6 +14,7 @@ use SolrEngine\Contracts\SearchResults;
 use SolrEngine\Contracts\Suggestions;
 use SolrEngine\Contracts\SuggestQuery;
 use SolrEngine\Documents\DocumentFields;
+use SolrEngine\Documents\IndexedTypes;
 use SolrEngine\Search\FacetLabeller;
 use SolrEngine\Search\FacetRegistry;
 use SolrEngine\Search\FacetSelection;
@@ -50,11 +51,17 @@ final class SearchController {
 	public const NAMESPACE = 'solrengine/v1';
 
 	/**
-	 * Search service.
+	 * Builds the search service.
 	 *
-	 * @var SearchService
+	 * A factory rather than the service, because routes are registered on
+	 * every REST request and building the service validates the configured
+	 * endpoint — a DNS lookup. On a shop, where the Store API answers the cart
+	 * and checkout blocks, that was one lookup per request for routes nobody
+	 * had called.
+	 *
+	 * @var callable
 	 */
-	private $search;
+	private $search_factory;
 
 	/**
 	 * Registered filters.
@@ -108,7 +115,7 @@ final class SearchController {
 	/**
 	 * Constructor.
 	 *
-	 * @param SearchService  $search  Search service.
+	 * @param callable       $search  Returns the search service.
 	 * @param FilterRegistry $filters Registered filters.
 	 * @param FacetRegistry  $facets  Registered facets.
 	 * @param Config         $config  Configuration.
@@ -116,21 +123,30 @@ final class SearchController {
 	 * @param int            $site_id Site identifier.
 	 */
 	public function __construct(
-		SearchService $search,
+		callable $search,
 		FilterRegistry $filters,
 		FacetRegistry $facets,
 		Config $config,
 		RateLimiter $limiter,
 		int $site_id
 	) {
-		$this->search    = $search;
-		$this->filters   = $filters;
-		$this->facets    = $facets;
-		$this->selection = new FacetSelection( $facets );
-		$this->labeller  = new FacetLabeller( $facets );
-		$this->config    = $config;
-		$this->limiter   = $limiter;
-		$this->site_id   = $site_id;
+		$this->search_factory = $search;
+		$this->filters        = $filters;
+		$this->facets         = $facets;
+		$this->selection      = new FacetSelection( $facets );
+		$this->labeller       = new FacetLabeller( $facets );
+		$this->config         = $config;
+		$this->limiter        = $limiter;
+		$this->site_id        = $site_id;
+	}
+
+	/**
+	 * The search service.
+	 *
+	 * @return SearchService
+	 */
+	private function search(): SearchService {
+		return ( $this->search_factory )();
 	}
 
 	/**
@@ -243,7 +259,7 @@ final class SearchController {
 			$query = $query->with_post_types( $post_types );
 		}
 
-		$result = $this->search->suggest( $query );
+		$result = $this->search()->suggest( $query );
 
 		if ( $result->is_failure() ) {
 			// An empty list rather than an error. Autocomplete is an
@@ -466,7 +482,7 @@ final class SearchController {
 
 		$query = $this->selection->apply( $query, $facets, $this->parents( $request ) );
 
-		$result = $this->search->search( $query );
+		$result = $this->search()->search( $query );
 
 		if ( $result->is_failure() ) {
 			// Deliberately not a silent fallback to WordPress results. A client
@@ -673,7 +689,7 @@ final class SearchController {
 			->apply( $query, $facets, $this->parents( $request ) )
 			->without_documents();
 
-		$result = $this->search->search( $query );
+		$result = $this->search()->search( $query );
 
 		if ( $result->is_failure() ) {
 			return new WP_Error(
@@ -712,7 +728,7 @@ final class SearchController {
 	 * @return string[]
 	 */
 	private function allowed_post_types( array $requested ): array {
-		$indexed = array_map( 'strval', $this->config->get_array( 'index.post_types', array( 'post', 'page' ) ) );
+		$indexed = IndexedTypes::all( $this->config );
 
 		if ( array() === $requested ) {
 			return $indexed;

@@ -65,7 +65,7 @@ GET /wp-json/solrengine/v1/search
 | `q` | string | Search text, up to 512 characters |
 | `page` | integer | One-based |
 | `per_page` | integer | Capped at 50 |
-| `sort` | enum | `relevance`, `date_desc`, `date_asc`, `modified`, `title_asc`, `title_desc`, `menu_order` |
+| `sort` | enum | `relevance`, `date_desc`, `date_asc`, `modified`, `title_asc`, `title_desc`, `menu_order`, `price_asc`, `price_desc`, `popularity`, `rating` |
 | `post_type` | array | Restricted to indexed types |
 | `filters` | object | Keys must be registered. Unknown keys are rejected |
 | `facets` | array | Registered facet keys, up to ten. See [facets.md](facets.md) |
@@ -150,6 +150,7 @@ at the CDN or web server.
 | `solrengine_search_results` | filter | The results before they are returned |
 | `solrengine_register_filters` | action | Register a filter |
 | `solrengine_facet_definitions` | filter | Register a facet |
+| `solrengine_suggest_query` | filter | The autocomplete query before it reaches the backend |
 | `solrengine_rate_limit_request` | filter | Exempt a request from throttling |
 
 ---

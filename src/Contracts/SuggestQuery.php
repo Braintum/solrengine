@@ -60,6 +60,13 @@ final class SuggestQuery {
 	private $post_types = array();
 
 	/**
+	 * Filter values keyed by registered filter key.
+	 *
+	 * @var array<string,array<int,scalar>>
+	 */
+	private $filters = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string $prefix  What the visitor has typed.
@@ -115,6 +122,30 @@ final class SuggestQuery {
 	 *
 	 * @return string[]
 	 */
+	/**
+	 * Filter values keyed by registered filter key.
+	 *
+	 * Autocomplete answers from the same index as search, so it needs the same
+	 * ability to be narrowed — and, more to the point, the same ability to be
+	 * narrowed by rules a visitor cannot lift. A product a merchant hid from
+	 * search would otherwise be hidden from the results page and offered in the
+	 * dropdown above it.
+	 *
+	 * @since 0.7.0
+	 *
+	 * @return array<string,array<int,scalar>>
+	 */
+	public function filters(): array {
+		return $this->filters;
+	}
+
+	/**
+	 * Post types to restrict to.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @return string[]
+	 */
 	public function post_types(): array {
 		return $this->post_types;
 	}
@@ -128,6 +159,31 @@ final class SuggestQuery {
 	 */
 	public function is_long_enough(): bool {
 		return mb_strlen( trim( $this->prefix ) ) >= self::MIN_LENGTH;
+	}
+
+	/**
+	 * A copy restricted to given post types.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @param string[] $post_types Post types.
+	 * @return self
+	 */
+	/**
+	 * A copy with a filter applied.
+	 *
+	 * @since 0.7.0
+	 *
+	 * @param string            $key    Registered filter key.
+	 * @param array<int,scalar> $values Values to match.
+	 * @return self
+	 */
+	public function with_filter( string $key, array $values ): self {
+		$clone = clone $this;
+
+		$clone->filters[ $key ] = array_values( $values );
+
+		return $clone;
 	}
 
 	/**
@@ -163,7 +219,7 @@ final class SuggestQuery {
 
 		return md5(
 			(string) wp_json_encode(
-				array( $normalised, $this->site_id, $this->limit, $this->post_types )
+				array( $normalised, $this->site_id, $this->limit, $this->post_types, $this->filters )
 			)
 		);
 	}

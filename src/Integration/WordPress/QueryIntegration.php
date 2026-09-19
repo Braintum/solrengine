@@ -8,6 +8,7 @@
 namespace SolrEngine\Integration\WordPress;
 
 use SolrEngine\Contracts\SearchQuery;
+use SolrEngine\Documents\IndexedTypes;
 use SolrEngine\Contracts\SearchResults;
 use SolrEngine\Search\FacetRegistry;
 use SolrEngine\Search\FacetSelection;
@@ -165,9 +166,7 @@ final class QueryIntegration {
 
 		$this->last_results = $results;
 
-		// WordPress cannot work these out itself, because no query ran.
-		$query->found_posts   = $results->total();
-		$query->max_num_pages = $results->total_pages();
+		ResultHydration::paginate( $query, $results );
 
 		return $this->hydrate( $results, $query );
 	}
@@ -294,7 +293,7 @@ final class QueryIntegration {
 	 * @return string[]
 	 */
 	private function requested_post_types( WP_Query $query ): array {
-		$indexed   = array_map( 'strval', $this->config->get_array( 'index.post_types', array( 'post', 'page' ) ) );
+		$indexed   = IndexedTypes::all( $this->config );
 		$requested = $query->get( 'post_type' );
 
 		if ( '' === $requested || 'any' === $requested ) {
@@ -309,55 +308,11 @@ final class QueryIntegration {
 	/**
 	 * Turn hits into whatever WordPress asked for.
 	 *
-	 * Honours the "fields" query variable. A query asking for IDs must not be
-	 * handed full objects: callers that asked for IDs treat the return value
-	 * as scalars, and handing them objects produces errors far from here.
-	 *
 	 * @param SearchResults $results Results.
 	 * @param WP_Query      $query   The query.
 	 * @return array<int,mixed>
 	 */
 	private function hydrate( SearchResults $results, WP_Query $query ): array {
-		$ids = $results->object_ids();
-
-		if ( array() === $ids ) {
-			return array();
-		}
-
-		$fields = (string) $query->get( 'fields' );
-
-		if ( 'ids' === $fields ) {
-			return $ids;
-		}
-
-		// One query for every post, rather than one per post while the theme
-		// renders. Without this a page of ten results costs ten queries plus
-		// their meta and term lookups.
-		_prime_post_caches( $ids, true, true );
-
-		$posts = array();
-
-		foreach ( $ids as $id ) {
-			$post = get_post( $id );
-
-			if ( $post instanceof \WP_Post ) {
-				// Relevance order comes from the index, so the posts are
-				// appended in the order the hits arrived rather than the order
-				// a database would have returned them.
-				$posts[] = $post;
-			}
-		}
-
-		if ( 'id=>parent' === $fields ) {
-			$pairs = array();
-
-			foreach ( $posts as $post ) {
-				$pairs[ $post->ID ] = $post->post_parent;
-			}
-
-			return $pairs;
-		}
-
-		return $posts;
+		return ResultHydration::posts( $results, $query );
 	}
 }

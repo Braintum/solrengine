@@ -11,6 +11,7 @@ use SolrEngine\Contracts\FacetDefinition;
 use SolrEngine\Contracts\FacetResult;
 use SolrEngine\Contracts\SearchQuery;
 use SolrEngine\Contracts\SearchResults;
+use SolrEngine\Documents\IndexedTypes;
 use SolrEngine\Search\FacetLabeller;
 use SolrEngine\Search\FacetRegistry;
 use SolrEngine\Search\FacetSelection;
@@ -369,7 +370,17 @@ final class SearchFilters {
 
 			<ul class="solrengine-filters__values">
 				<?php foreach ( $facet->buckets() as $bucket ) : ?>
-					<?php $id = 'se-f-' . sanitize_html_class( $facet->key() . '-' . $bucket->value() ); ?>
+					<?php
+					if ( $bucket->count() < 1 && ! $bucket->is_selected() ) {
+						// A band with nothing in it. Range facets keep their
+						// empty buckets, because a histogram with holes in it
+						// misleads — but a filter panel is not a histogram, and
+						// a box that leads to an empty page is not a filter.
+						continue;
+					}
+
+					$id = 'se-f-' . sanitize_html_class( $facet->key() . '-' . $bucket->value() );
+					?>
 					<li class="solrengine-filters__value">
 						<input
 							type="checkbox"
@@ -515,7 +526,7 @@ final class SearchFilters {
 	private function query(): SearchQuery {
 		$query = new SearchQuery( $this->terms(), $this->site_id );
 
-		$post_types = array_map( 'strval', $this->config->get_array( 'index.post_types', array( 'post', 'page' ) ) );
+		$post_types = IndexedTypes::all( $this->config );
 
 		if ( array() !== $post_types ) {
 			$query = $query->with_post_types( $post_types );

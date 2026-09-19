@@ -111,6 +111,10 @@ Two leakage paths that return no documents and are easy to miss:
   in the same request as faceting, before counts are computed, so a count can
   never reveal how much private content exists. Asserted against a real Solr in
   `tests/Backend/FacetTest.php`.
+- **Catalogue visibility is a disclosure rule too.** A product a merchant hid
+  from search must not appear in search results, in the REST API, or in the
+  autocomplete dropdown. The rule is applied on every path that reads the
+  index, and a fully hidden product is never indexed at all.
 - **Cross-site leakage on a shared collection.** `se_i_site` is injected by the
   query builder, never supplied by a caller and never removable through a hook.
   On a shared multisite collection it is the only thing separating tenants, so

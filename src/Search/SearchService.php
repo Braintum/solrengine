@@ -201,6 +201,23 @@ final class SearchService {
 			return Result::failure( 'circuit_open', 'The search backend is temporarily unavailable.' );
 		}
 
+		/**
+		 * Filters an autocomplete query before it reaches the backend.
+		 *
+		 * The counterpart of `solrengine_search_query`, and it exists for the
+		 * same reason: rules that narrow what a visitor may see have to reach
+		 * every path that reads the index, not only the results page.
+		 *
+		 * @since 0.7.0
+		 *
+		 * @param SuggestQuery $query The query about to run.
+		 */
+		$query = apply_filters( 'solrengine_suggest_query', $query );
+
+		if ( ! $query instanceof SuggestQuery ) {
+			return Result::failure( 'bad_filter', 'A solrengine_suggest_query filter returned something that is not a SuggestQuery.' );
+		}
+
 		$key    = 'suggest_' . SOLRENGINE_SCHEMA_CONTRACT_VERSION . '_' . $query->cache_key();
 		$cached = $this->cache_enabled() ? wp_cache_get( $key, self::CACHE_GROUP ) : false;
 

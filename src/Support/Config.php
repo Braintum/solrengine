@@ -99,7 +99,17 @@ final class Config {
 				'index.post_types'              => array( 'post', 'page' ),
 				'index.meta_allowlist'          => array(),
 
+				// WooCommerce. Products are indexed as soon as the plugin is
+				// there, because a shop that installed a search plugin wants
+				// its products searchable; answering the shop's own queries
+				// from Solr is the deliberate step, and stays off until asked.
+				'index.products'                => true,
+				'index.stock_quantity'          => false,
+				'index.low_stock_threshold'     => 2,
+				'index.variation_limit'         => 100,
+
 				'search.enabled'                => false,
+				'search.shop_enabled'           => false,
 				'search.instant_enabled'        => false,
 				'search.instant_limit'          => 8,
 				'search.max_rows'               => 50,

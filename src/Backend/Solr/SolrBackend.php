@@ -104,12 +104,13 @@ final class SolrBackend implements SearchBackend, IndexBackend, SchemaBackend {
 	/**
 	 * Constructor.
 	 *
-	 * @param HttpTransport   $http             Transport.
-	 * @param SchemaPlanner   $planner          Schema planner.
-	 * @param SchemaExporter  $exporter         Schema exporter.
-	 * @param int             $commit_within_ms Commit window in milliseconds.
-	 * @param QueryTranslator $translator       Query translator.
-	 * @param ResponseParser  $parser           Response parser.
+	 * @param HttpTransport     $http             Transport.
+	 * @param SchemaPlanner     $planner          Schema planner.
+	 * @param SchemaExporter    $exporter         Schema exporter.
+	 * @param int               $commit_within_ms Commit window in milliseconds.
+	 * @param QueryTranslator   $translator       Query translator.
+	 * @param ResponseParser    $parser           Response parser.
+	 * @param SuggestTranslator $suggester        Autocomplete translator.
 	 */
 	public function __construct(
 		HttpTransport $http,
@@ -117,7 +118,8 @@ final class SolrBackend implements SearchBackend, IndexBackend, SchemaBackend {
 		SchemaExporter $exporter,
 		int $commit_within_ms = 60000,
 		?QueryTranslator $translator = null,
-		?ResponseParser $parser = null
+		?ResponseParser $parser = null,
+		?SuggestTranslator $suggester = null
 	) {
 		$this->http             = $http;
 		$this->planner          = $planner;
@@ -128,7 +130,7 @@ final class SolrBackend implements SearchBackend, IndexBackend, SchemaBackend {
 			\SolrEngine\Search\FilterRegistry::defaults()
 		);
 		$this->parser           = $parser ?? new ResponseParser();
-		$this->suggester        = new SuggestTranslator();
+		$this->suggester        = $suggester ?? new SuggestTranslator();
 	}
 
 	/**

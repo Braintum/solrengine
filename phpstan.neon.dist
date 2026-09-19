@@ -20,6 +20,10 @@ parameters:
         # loader, so they are not autoloadable for analysis.
         - vendor/woocommerce/action-scheduler/functions.php
         - vendor/woocommerce/action-scheduler/deprecated/functions.php
+        # WooCommerce is an optional integration: present on a shop, absent
+        # everywhere else. Its classes are therefore never autoloadable during
+        # analysis, and every call into them has to be guarded at runtime.
+        - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
 
     bootstrapFiles:
         - tests/phpstan-bootstrap.php

@@ -87,15 +87,27 @@ final class RelevanceProfile {
 	 * @since 0.4.0
 	 *
 	 * @param array<string,mixed> $config Stored relevance settings.
+	 * @param array<string,float> $extra  Fields an active integration contributes.
 	 * @return self
 	 */
-	public static function from_config( array $config ): self {
+	public static function from_config( array $config, array $extra = array() ): self {
 		$boosts = array();
 
 		foreach ( (array) ( $config['field_boosts'] ?? array() ) as $field => $boost ) {
 			if ( is_numeric( $boost ) && (float) $boost > 0 ) {
 				$boosts[ (string) $field ] = (float) $boost;
 			}
+		}
+
+		if ( array() !== $extra ) {
+			// Merged onto whatever the site configured, or onto the defaults
+			// when it configured nothing. An administrator who has tuned their
+			// own boosts keeps them; the integration only adds fields that did
+			// not exist before it was installed.
+			$boosts = array_merge(
+				array() !== $boosts ? $boosts : self::default_field_boosts(),
+				$extra
+			);
 		}
 
 		return new self(

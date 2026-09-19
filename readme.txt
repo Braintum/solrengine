@@ -4,7 +4,7 @@ Tags: search, solr, relevance, faceted search, woocommerce
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.6.0
+Stable tag: 0.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -167,13 +167,48 @@ once and they will appear.
 
 = Does it support WooCommerce? =
 
-Not yet. WooCommerce product indexing and filtering are planned.
+Yes. Products are indexed as soon as WooCommerce is active, with their SKUs,
+prices, stock status, attributes, categories and brands. The shop page, product
+archives, product search and the Product Collection block can be answered by
+Solr once you switch that on from the settings screen.
+
+Prices are indexed as base prices and used for filtering and sorting; the price
+a customer sees is still rendered by WooCommerce.
+
+= What happens to a shop filter SolrEngine does not understand? =
+
+The query goes back to WooCommerce and the database answers it. That is slower
+and correct. A shop page that looks filtered and is not costs money.
 
 = Does it work on multisite? =
 
 It can be used per site. Network-level configuration is planned.
 
 == Changelog ==
+
+= 0.7.0 =
+* WooCommerce. Products are indexed with their SKUs, prices, stock, attributes,
+  categories, brands and ratings as soon as WooCommerce is active.
+* Variations are folded into their parent product, so filtering by "16 GB" and
+  "in stock" finds products that have such a variation, and counts stay per
+  product rather than per variation.
+* The shop page, category and brand archives, product search and the Product
+  Collection block can all be answered by Solr. Switch it on from the settings
+  screen.
+* Sorting by price, popularity, rating, date or title, layered navigation, and
+  the price slider all work as they do now.
+* A query SolrEngine cannot express exactly — a rating filter, or one an
+  extension added — is handed back to WooCommerce rather than answered
+  approximately.
+* Catalogue visibility is respected everywhere: a product hidden from search
+  stays out of search results, the REST API and the suggestions dropdown. A
+  fully hidden product is never indexed.
+* Price, availability, on-sale and attribute facets, with price bands derived
+  from the catalogue's own prices.
+* Fixed: a full reindex ignored post types that an integration had added, so
+  content indexed on save could disappear on the next full sync.
+* Fixed: the search endpoint ignored a post type it had not been configured
+  with, and answered with everything instead.
 
 = 0.6.0 =
 * Faceted search. Visitors can narrow results by content type, category, tag or
@@ -270,6 +305,10 @@ It can be used per site. Network-level configuration is planned.
 * Coding standards, static analysis and test tooling.
 
 == Upgrade Notice ==
+
+= 0.7.0 =
+Adds WooCommerce support. Products are indexed automatically; run a full index
+to bring an existing catalogue in.
 
 = 0.6.0 =
 Adds faceted search. Category filters need a reindex: run a full index from the

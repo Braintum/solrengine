@@ -58,6 +58,19 @@ final class SearchQuery {
 	private $filters = array();
 
 	/**
+	 * How each filter's values combine, keyed by filter key.
+	 *
+	 * "or" by default: ticking two categories means "in either", which is what
+	 * ticking two boxes means to the person doing it. "and" exists because
+	 * WooCommerce's layered navigation defaults to it — a shopper choosing two
+	 * attribute values there means "has both" — and answering that query with
+	 * a disjunction would return products they excluded.
+	 *
+	 * @var array<string,string>
+	 */
+	private $filter_modes = array();
+
+	/**
 	 * Sort key, from a server-declared enum.
 	 *
 	 * @var string
@@ -174,6 +187,18 @@ final class SearchQuery {
 	 */
 	public function filters(): array {
 		return $this->filters;
+	}
+
+	/**
+	 * How one filter's values combine.
+	 *
+	 * @since 0.7.0
+	 *
+	 * @param string $key Filter key.
+	 * @return string "or" or "and".
+	 */
+	public function filter_mode( string $key ): string {
+		return $this->filter_modes[ $key ] ?? 'or';
 	}
 
 	/**
@@ -309,12 +334,19 @@ final class SearchQuery {
 	 *
 	 * @param string            $key    Registered filter key.
 	 * @param array<int,scalar> $values Values to match.
+	 * @param string            $mode   "or" for any value, "and" for all of them.
 	 * @return self
 	 */
-	public function with_filter( string $key, array $values ): self {
+	public function with_filter( string $key, array $values, string $mode = 'or' ): self {
 		$clone = clone $this;
 
 		$clone->filters[ $key ] = array_values( $values );
+
+		if ( 'and' === $mode ) {
+			$clone->filter_modes[ $key ] = 'and';
+		} else {
+			unset( $clone->filter_modes[ $key ] );
+		}
 
 		return $clone;
 	}
@@ -450,9 +482,11 @@ final class SearchQuery {
 	public function cache_key(): string {
 		$filters = $this->filters;
 		$facets  = $this->facets;
+		$modes   = $this->filter_modes;
 
 		ksort( $filters );
 		ksort( $facets );
+		ksort( $modes );
 
 		foreach ( $filters as $key => $values ) {
 			sort( $filters[ $key ] );
@@ -471,6 +505,7 @@ final class SearchQuery {
 					$this->language,
 					$this->highlight,
 					$facets,
+					$modes,
 					$this->documents,
 				)
 			)

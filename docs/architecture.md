@@ -73,6 +73,8 @@ never searches and never saves a post pays for `Bootstrap` and nothing else.
 | `solrengine_booted` | action | Register a backend, facet or admin screen. Receives the container. Fires before anything is constructed |
 | `solrengine_register_filters` | action | Register a filter a caller may narrow by |
 | `solrengine_facet_definitions` | filter | Register a facet a caller may count by |
+| `solrengine_indexable_post_types` | filter | Declare a post type as indexable. Honoured by the save listeners and by a full sync |
+| `solrengine_suggest_query` | filter | The autocomplete query before it reaches the backend |
 
 More arrive with the phases that need them. The plan's section 11.3 lists the
 intended set; each one is public API from 1.0 and needs a test and a docblock

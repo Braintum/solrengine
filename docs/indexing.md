@@ -46,6 +46,9 @@ Content is stripped of blocks, shortcodes and tags before indexing. Shortcodes
 are removed rather than executed: running `the_content` inside a background job
 would execute arbitrary plugin code once per post, slowly and unpredictably.
 
+Products are indexed too, as soon as WooCommerce is active, with everything a
+shop filters by. See [woocommerce.md](woocommerce.md).
+
 ## What does not get indexed
 
 Drafts, pending posts, auto-drafts, trashed posts and any post whose status is

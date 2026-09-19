@@ -36,6 +36,22 @@ use SolrEngine\Documents\DocumentFields;
 final class SuggestTranslator {
 
 	/**
+	 * Which filters may be applied, and to which fields.
+	 *
+	 * @var FilterRegistry
+	 */
+	private $filters;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param FilterRegistry|null $filters Registered filters.
+	 */
+	public function __construct( ?FilterRegistry $filters = null ) {
+		$this->filters = $filters ?? new FilterRegistry();
+	}
+
+	/**
 	 * Name of the request parameter holding the visitor's text.
 	 *
 	 * @var string
@@ -182,6 +198,14 @@ final class SuggestTranslator {
 			DocumentFields::SITE . ':' . $query->site_id(),
 			DocumentFields::VISIBILITY . ':public',
 		);
+
+		foreach ( $query->filters() as $key => $values ) {
+			$clause = $this->filters->clause_for( (string) $key, (array) $values );
+
+			if ( '' !== $clause ) {
+				$clauses[] = $clause;
+			}
+		}
 
 		$post_types = $query->post_types();
 

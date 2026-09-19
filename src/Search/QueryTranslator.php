@@ -9,6 +9,7 @@ namespace SolrEngine\Search;
 
 use SolrEngine\Contracts\SearchQuery;
 use SolrEngine\Documents\DocumentFields;
+use SolrEngine\Integration\WooCommerce\ProductFields;
 
 /**
  * Builds Solr parameters from a structured query.
@@ -304,7 +305,7 @@ final class QueryTranslator {
 
 		foreach ( $query->filters() as $key => $values ) {
 			$key    = (string) $key;
-			$clause = $this->filters->clause_for( $key, (array) $values );
+			$clause = $this->filters->clause_for( $key, (array) $values, $query->filter_mode( $key ) );
 
 			if ( '' === $clause ) {
 				continue;
@@ -341,6 +342,15 @@ final class QueryTranslator {
 			'title_asc'  => DocumentFields::TITLE_SORT . ' asc',
 			'title_desc' => DocumentFields::TITLE_SORT . ' desc',
 			'menu_order' => DocumentFields::MENU_ORDER . ' asc',
+
+			// Shop orderings. The fields behind them are written by the
+			// WooCommerce integration, and sorting by one on a site that sells
+			// nothing is harmless: the dynamic field pattern exists whether or
+			// not any document uses it, so Solr sorts rather than erroring.
+			'price_asc'  => ProductFields::PRICE_MIN . ' asc',
+			'price_desc' => ProductFields::PRICE_MAX . ' desc',
+			'popularity' => ProductFields::SALES . ' desc',
+			'rating'     => ProductFields::RATING . ' desc',
 		);
 
 		return $map[ $sort ] ?? '';
@@ -354,7 +364,19 @@ final class QueryTranslator {
 	 * @return string[]
 	 */
 	public static function sort_keys(): array {
-		return array( 'relevance', 'date_desc', 'date_asc', 'modified', 'title_asc', 'title_desc', 'menu_order' );
+		return array(
+			'relevance',
+			'date_desc',
+			'date_asc',
+			'modified',
+			'title_asc',
+			'title_desc',
+			'menu_order',
+			'price_asc',
+			'price_desc',
+			'popularity',
+			'rating',
+		);
 	}
 
 	/**
