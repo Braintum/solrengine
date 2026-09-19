@@ -77,6 +77,26 @@ interface IndexBackend {
 	public function write_batch( array $documents ): Result;
 
 	/**
+	 * Make everything written so far visible to searchers.
+	 *
+	 * The one place an explicit commit belongs. Ordinary writes never commit —
+	 * they arrange visibility through a commit window, because a commit per
+	 * document is what made the 0.1.0 prototype unusable — but the end of a full
+	 * run is different: something is about to ask whether the run worked, and a
+	 * count taken before the commit window elapses is short for reasons that have
+	 * nothing to do with whether indexing succeeded.
+	 *
+	 * Implementations must treat a commit as safe to call more than once, and
+	 * must not fail the caller's work when a commit fails: the documents are
+	 * written either way and will become visible on the backend's own schedule.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @return Result
+	 */
+	public function commit(): Result;
+
+	/**
 	 * Remove every document matching a selector.
 	 *
 	 * The way a site's documents are removed without enumerating a million

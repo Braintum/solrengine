@@ -11,6 +11,8 @@ use SolrEngine\Backend\BackendRegistry;
 use SolrEngine\Contracts\SchemaBackend;
 use SolrEngine\Diagnostics\ConnectionDiagnostic;
 use SolrEngine\Indexing\FullSync;
+use SolrEngine\Indexing\Rebuild;
+use SolrEngine\Indexing\RunHistory;
 use SolrEngine\Support\Container;
 use SolrEngine\Schema\ContractRegistry;
 use SolrEngine\Schema\SchemaExporter;
@@ -494,5 +496,256 @@ final class Commands {
 			),
 			array( 'property', 'value' )
 		);
+	}
+
+	/**
+	 * Build a replacement index alongside the live one, and switch to it.
+	 *
+	 * The alternative to reindexing in place. A reindex writes over the index
+	 * that is answering searches, so results are wrong for as long as it runs and
+	 * there is no way back; this builds a second index, checks it, and switches
+	 * only then. The previous index is never deleted automatically.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : What to do.
+	 * ---
+	 * default: status
+	 * options:
+	 *   - status
+	 *   - start
+	 *   - verify
+	 *   - switch
+	 *   - discard
+	 *   - drop-previous
+	 * ---
+	 *
+	 * [--target=<name>]
+	 * : Index to build into. Required where SolrEngine cannot create one, which
+	 * is any Solr not running in SolrCloud mode.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp solrengine rebuild start
+	 *     wp solrengine rebuild start --target=wordpress_v2
+	 *     wp solrengine rebuild verify
+	 *     wp solrengine rebuild switch
+	 *
+	 * @since 0.8.0
+	 *
+	 * @param array<int,string>    $args       Positional arguments.
+	 * @param array<string,string> $assoc_args Flags.
+	 * @return void
+	 */
+	public function rebuild( array $args, array $assoc_args ): void {
+		$rebuild = $this->container->get( 'indexing.rebuild' );
+
+		if ( ! $rebuild instanceof Rebuild ) {
+			WP_CLI::error( 'No usable backend. Run "wp solrengine test" to see why.' );
+		}
+
+		$action = isset( $args[0] ) ? (string) $args[0] : 'status';
+
+		switch ( $action ) {
+			case 'start':
+				$this->rebuild_start( $rebuild, isset( $assoc_args['target'] ) ? (string) $assoc_args['target'] : '' );
+				return;
+
+			case 'verify':
+				$this->report_rebuild( $this->expect( $rebuild->verify() ) );
+				return;
+
+			case 'switch':
+				$this->expect( $rebuild->switch_over() );
+
+				WP_CLI::success( 'Searches are now answered by the new index. The previous one is still on the server.' );
+				return;
+
+			case 'discard':
+				$this->expect( $rebuild->discard() );
+
+				WP_CLI::success( 'Discarded.' );
+				return;
+
+			case 'drop-previous':
+				$this->expect( $rebuild->drop_previous() );
+
+				WP_CLI::success( 'The previous index was deleted.' );
+				return;
+
+			default:
+				$state = $rebuild->state();
+
+				if ( null === $state ) {
+					$plan = $this->expect( $rebuild->plan() );
+
+					WP_CLI::log( sprintf( 'No rebuild in progress. Strategy: %s.', (string) $plan['style'] ) );
+					WP_CLI::log(
+						$plan['can_create']
+							? sprintf( 'Starting one would create "%s".', (string) $plan['suggested'] )
+							: 'Starting one needs --target, naming a core that already exists.'
+					);
+
+					return;
+				}
+
+				$this->report_rebuild( $state );
+		}
+	}
+
+	/**
+	 * Show what has been indexed and what failed.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--limit=<number>]
+	 * : How many runs to list.
+	 * ---
+	 * default: 10
+	 * ---
+	 *
+	 * [--failures]
+	 * : List the objects that failed instead of the runs.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp solrengine history
+	 *     wp solrengine history --failures
+	 *
+	 * @since 0.8.0
+	 *
+	 * @param array<int,string>    $args       Positional arguments.
+	 * @param array<string,string> $assoc_args Flags.
+	 * @return void
+	 */
+	public function history( array $args, array $assoc_args ): void {
+		unset( $args );
+
+		$history = $this->container->get( 'indexing.history' );
+
+		if ( ! $history instanceof RunHistory ) {
+			WP_CLI::error( 'Run history is unavailable.' );
+		}
+
+		$limit = isset( $assoc_args['limit'] ) ? (int) $assoc_args['limit'] : 10;
+
+		if ( isset( $assoc_args['failures'] ) ) {
+			$failures = $history->failures( 0, $limit );
+
+			if ( array() === $failures ) {
+				WP_CLI::log( 'No failures have been recorded.' );
+
+				return;
+			}
+
+			WP_CLI\Utils\format_items( 'table', $failures, array( 'run_id', 'object_type', 'object_id', 'message' ) );
+
+			return;
+		}
+
+		$runs = $history->recent( $limit );
+
+		if ( array() === $runs ) {
+			WP_CLI::log( 'Nothing has been indexed from this site yet.' );
+
+			return;
+		}
+
+		$rows = array();
+
+		foreach ( $runs as $run ) {
+			$rows[] = array(
+				'started' => gmdate( 'Y-m-d H:i', (int) $run['started_at'] ),
+				'kind'    => (string) $run['kind'],
+				'target'  => (string) $run['target'],
+				'state'   => (string) $run['state'],
+				'indexed' => (int) $run['written'],
+				'failed'  => (int) $run['failed'],
+				'seconds' => max( 0, (int) $run['finished_at'] - (int) $run['started_at'] ),
+			);
+		}
+
+		WP_CLI\Utils\format_items( 'table', $rows, array( 'started', 'kind', 'target', 'state', 'indexed', 'failed', 'seconds' ) );
+	}
+
+	/**
+	 * Start a rebuild and run it to completion in this process.
+	 *
+	 * Run here rather than handed to the queue, for the same reason the index
+	 * command does it: there is no web-server timeout on a command line, and a
+	 * queue round trip per batch would only add latency to a run somebody is
+	 * watching.
+	 *
+	 * @param Rebuild $rebuild Rebuild service.
+	 * @param string  $target  Target index, or empty to create one.
+	 * @return void
+	 */
+	private function rebuild_start( Rebuild $rebuild, string $target ): void {
+		$state = $this->expect( $rebuild->start( $target ) );
+
+		WP_CLI::log( sprintf( 'Building into "%s". Searches are still answered by the current index.', (string) $state['target'] ) );
+
+		$done = 0;
+
+		do {
+			$batch = $rebuild->run_batch();
+
+			if ( $batch->is_failure() ) {
+				WP_CLI::error( $batch->message() );
+			}
+
+			$run = $batch->value();
+
+			if ( (int) $run['processed'] - $done >= 1000 ) {
+				$done = (int) $run['processed'];
+
+				WP_CLI::log( sprintf( '%s indexed.', number_format_i18n( $done ) ) );
+			}
+		} while ( 'running' === $run['state'] );
+
+		$this->report_rebuild( $this->expect( $rebuild->verify() ) );
+
+		WP_CLI::log( 'Run "wp solrengine rebuild switch" when you are satisfied with the new index.' );
+	}
+
+	/**
+	 * Print a rebuild's state.
+	 *
+	 * @param array<string,mixed> $state Rebuild state.
+	 * @return void
+	 */
+	private function report_rebuild( array $state ): void {
+		WP_CLI::log(
+			sprintf(
+				'%s: building into "%s" — %s of about %s documents.',
+				(string) $state['state'],
+				(string) $state['target'],
+				number_format_i18n( (int) $state['actual'] ),
+				number_format_i18n( (int) $state['expected'] )
+			)
+		);
+
+		if ( '' !== (string) $state['message'] ) {
+			WP_CLI::log( (string) $state['message'] );
+		}
+
+		if ( 'ready' === $state['state'] ) {
+			WP_CLI::success( 'The new index matches WordPress and is ready to switch to.' );
+		}
+	}
+
+	/**
+	 * Unwrap a Result, or stop with its message.
+	 *
+	 * @param \SolrEngine\Contracts\Result $result Result to unwrap.
+	 * @return mixed
+	 */
+	private function expect( $result ) {
+		if ( $result->is_failure() ) {
+			WP_CLI::error( $result->message() );
+		}
+
+		return $result->value( array() );
 	}
 }

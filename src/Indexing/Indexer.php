@@ -138,6 +138,21 @@ final class Indexer {
 	}
 
 	/**
+	 * Make everything written so far visible.
+	 *
+	 * A passthrough, but a deliberate one: the backend is private here, and the
+	 * alternative is exposing it so a caller can reach past the indexer to the
+	 * thing the indexer exists to wrap.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @return Result
+	 */
+	public function commit(): Result {
+		return $this->backend->commit();
+	}
+
+	/**
 	 * Remove a set of references.
 	 *
 	 * @since 0.3.0

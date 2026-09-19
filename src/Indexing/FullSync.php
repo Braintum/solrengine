@@ -31,6 +31,12 @@ use SolrEngine\Support\Config;
  * Progress lives in an option, not a transient. A transient can be evicted by
  * an object cache under pressure, which would silently restart a six-hour run.
  *
+ * A run belongs to a channel. The default channel writes to the live index; a
+ * rebuild runs on its own channel, with its own option and its own queue hook,
+ * so that building a replacement index cannot overwrite the progress of an
+ * ordinary sync or be continued by the wrong instance. One FullSync per
+ * destination, never one shared instance that is told where to write.
+ *
  * @since 0.3.0
  */
 final class FullSync {
@@ -99,20 +105,89 @@ final class FullSync {
 	private $site_id;
 
 	/**
+	 * Run history, or null when runs are not recorded.
+	 *
+	 * @var RunHistory|null
+	 */
+	private $history;
+
+	/**
+	 * Channel suffix. Empty for the live index.
+	 *
+	 * @var string
+	 */
+	private $channel;
+
+	/**
+	 * Index this channel writes to, for the history record.
+	 *
+	 * @var string
+	 */
+	private $target;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param Indexer  $indexer Indexer.
-	 * @param JobQueue $queue   Job queue.
-	 * @param Config   $config  Configuration.
-	 * @param Logger   $logger  Logger.
-	 * @param int      $site_id Site identifier.
+	 * @param Indexer         $indexer Indexer.
+	 * @param JobQueue        $queue   Job queue.
+	 * @param Config          $config  Configuration.
+	 * @param Logger          $logger  Logger.
+	 * @param int             $site_id Site identifier.
+	 * @param RunHistory|null $history Run history.
+	 * @param string          $channel Channel name, empty for the live index.
+	 * @param string          $target  Index this channel writes to.
 	 */
-	public function __construct( Indexer $indexer, JobQueue $queue, Config $config, Logger $logger, int $site_id ) {
+	public function __construct(
+		Indexer $indexer,
+		JobQueue $queue,
+		Config $config,
+		Logger $logger,
+		int $site_id,
+		?RunHistory $history = null,
+		string $channel = '',
+		string $target = ''
+	) {
 		$this->indexer = $indexer;
 		$this->queue   = $queue;
 		$this->config  = $config;
 		$this->logger  = $logger;
 		$this->site_id = $site_id;
+		$this->history = $history;
+		$this->channel = preg_replace( '/[^a-z0-9_]/', '', strtolower( $channel ) ) ?? '';
+		$this->target  = $target;
+	}
+
+	/**
+	 * The option this channel stores its run in.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @return string
+	 */
+	public function option(): string {
+		return '' === $this->channel ? self::OPTION : self::OPTION . '_' . $this->channel;
+	}
+
+	/**
+	 * The queue hook this channel's batches are scheduled on.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @return string
+	 */
+	public function hook(): string {
+		return '' === $this->channel ? self::HOOK : self::HOOK . '_' . $this->channel;
+	}
+
+	/**
+	 * The index this channel writes to, empty when it is the live one.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @return string
+	 */
+	public function target(): string {
+		return $this->target;
 	}
 
 	/**
@@ -141,6 +216,8 @@ final class FullSync {
 			return Result::failure( 'no_post_types', __( 'No post types are configured for indexing.', 'solrengine' ) );
 		}
 
+		$total = $this->count_total( $types );
+
 		$run = array(
 			'state'      => 'running',
 			'post_types' => array_values( $types ),
@@ -150,15 +227,17 @@ final class FullSync {
 			'written'    => 0,
 			'removed'    => 0,
 			'failed'     => 0,
-			'total'      => $this->count_total( $types ),
+			'total'      => $total,
 			'started_at' => time(),
 			'updated_at' => time(),
 			'last_error' => '',
+			'target'     => $this->target,
+			'history_id' => null === $this->history ? 0 : $this->history->open( $this->kind(), $total, $this->target ),
 		);
 
 		$this->save( $run );
 
-		$queued = $this->queue->enqueue( self::HOOK );
+		$queued = $this->queue->enqueue( $this->hook() );
 
 		if ( $queued->is_failure() ) {
 			// The run is recorded even when the queue refuses, so the admin
@@ -168,6 +247,7 @@ final class FullSync {
 			$run['last_error'] = $queued->message();
 
 			$this->save( $run );
+			$this->record_end( $run );
 
 			return $queued;
 		}
@@ -193,10 +273,26 @@ final class FullSync {
 		$ids     = $this->next_ids( $run['post_types'], (int) $run['cursor'], (int) $run['batch_size'] );
 
 		if ( array() === $ids ) {
+			// One explicit hard commit, at the end and nowhere else. Every batch
+			// above relied on the commit window, which means the last of them may
+			// not be visible yet — and the next thing that happens is something
+			// asking whether the run worked. A failed commit is logged and not
+			// treated as a failed run: the documents are written, and Solr will
+			// make them visible on its own schedule regardless.
+			$committed = $this->indexer->commit();
+
+			if ( $committed->is_failure() ) {
+				$this->logger->warning(
+					'Could not commit at the end of a full sync',
+					array( 'code' => $committed->code() )
+				);
+			}
+
 			$run['state']      = 'complete';
 			$run['updated_at'] = time();
 
 			$this->save( $run );
+			$this->record_end( $run );
 			$this->logger->info( 'Full synchronisation complete', array( 'processed' => $run['processed'] ) );
 
 			/**
@@ -225,6 +321,12 @@ final class FullSync {
 			$run['removed']   += $outcome->removed();
 			$run['failed']    += count( $outcome->failures() );
 			$run['last_error'] = '';
+
+			if ( null !== $this->history && $outcome->has_failures() ) {
+				// Which objects failed, not just how many. "Search is missing
+				// some posts" is unanswerable from a count.
+				$this->history->record_failures( (int) ( $run['history_id'] ?? 0 ), $outcome->failures() );
+			}
 		} else {
 			// A backend failure is not fatal to the run. The cursor still
 			// advances, because retrying the same batch forever against a Solr
@@ -232,6 +334,16 @@ final class FullSync {
 			// what catches what was missed.
 			$run['failed']    += count( $refs );
 			$run['last_error'] = $result->message();
+
+			if ( null !== $this->history ) {
+				$rejected = array();
+
+				foreach ( $refs as $ref ) {
+					$rejected[ $ref->document_id() ] = $result->message();
+				}
+
+				$this->history->record_failures( (int) ( $run['history_id'] ?? 0 ), $rejected );
+			}
 
 			$this->logger->error( 'Batch failed during full sync', array( 'code' => $result->code() ) );
 		}
@@ -245,13 +357,14 @@ final class FullSync {
 
 		$this->free_memory();
 
-		$queued = $this->queue->enqueue( self::HOOK );
+		$queued = $this->queue->enqueue( $this->hook() );
 
 		if ( $queued->is_failure() ) {
 			$run['state']      = 'stalled';
 			$run['last_error'] = $queued->message();
 
 			$this->save( $run );
+			$this->record_end( $run );
 		}
 
 		return Result::success( $run );
@@ -300,12 +413,13 @@ final class FullSync {
 			return Result::failure( 'not_running', 'No synchronisation is in progress.' );
 		}
 
-		$this->queue->cancel( self::HOOK );
+		$this->queue->cancel( $this->hook() );
 
 		$run['state']      = 'cancelled';
 		$run['updated_at'] = time();
 
 		$this->save( $run );
+		$this->record_end( $run );
 
 		return Result::success( $run );
 	}
@@ -328,12 +442,20 @@ final class FullSync {
 			return Result::failure( 'already_complete', 'That run already finished.' );
 		}
 
-		$run['state']      = 'running';
+		$run['state'] = 'running';
+
+		if ( empty( $run['history_id'] ) && null !== $this->history ) {
+			// A run resumed after its history row was pruned, or after a
+			// version that did not record one. Open a fresh row rather than
+			// dropping the rest of the run from the record.
+			$run['history_id'] = $this->history->open( $this->kind(), (int) ( $run['total'] ?? 0 ), $this->target );
+		}
+
 		$run['updated_at'] = time();
 
 		$this->save( $run );
 
-		return $this->queue->enqueue( self::HOOK );
+		return $this->queue->enqueue( $this->hook() );
 	}
 
 	/**
@@ -344,9 +466,30 @@ final class FullSync {
 	 * @return array<string,mixed>|null
 	 */
 	public function state(): ?array {
-		$run = get_option( self::OPTION, null );
+		$run = get_option( $this->option(), null );
 
 		return is_array( $run ) && isset( $run['state'] ) ? $run : null;
+	}
+
+	/**
+	 * Forget this channel's run state.
+	 *
+	 * Only a channel other than the live one is ever discarded: a rebuild that
+	 * was abandoned should leave nothing behind that a later rebuild would
+	 * mistake for progress.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @return void
+	 */
+	public function forget(): void {
+		if ( '' === $this->channel ) {
+			return;
+		}
+
+		$this->queue->cancel( $this->hook() );
+
+		delete_option( $this->option() );
 	}
 
 	/**
@@ -533,6 +676,34 @@ final class FullSync {
 	 * @return void
 	 */
 	private function save( array $run ): void {
-		update_option( self::OPTION, $run, false );
+		update_option( $this->option(), $run, false );
+	}
+
+	/**
+	 * The history kind for this channel.
+	 *
+	 * @return string
+	 */
+	private function kind(): string {
+		return '' === $this->channel ? 'full' : $this->channel;
+	}
+
+	/**
+	 * Close this run's history record.
+	 *
+	 * @param array<string,mixed> $run Run state.
+	 * @return void
+	 */
+	private function record_end( array $run ): void {
+		if ( null === $this->history ) {
+			return;
+		}
+
+		$this->history->close(
+			(int) ( $run['history_id'] ?? 0 ),
+			(string) $run['state'],
+			$run,
+			(string) ( $run['last_error'] ?? '' )
+		);
 	}
 }

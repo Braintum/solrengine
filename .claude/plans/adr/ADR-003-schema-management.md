@@ -81,3 +81,59 @@ The hybrid is the only option that is simultaneously safe on infrastructure we d
 capable of handling fields nobody has invented yet, and supportable across thousands of divergent
 installations. Dynamic fields do the heavy lifting; the Schema API is a convenience with a consent
 gate in front of it; the shipped configset is the fallback that makes the whole thing honest.
+
+## Addendum, 2026-09-20 — Phase 7 built the migration UX, and the rebuild path needed correcting
+
+**Status:** the decision held. The Schema API sits behind a consent gate, the
+export path is the fallback, and nothing outside `se_` is touched. Three things
+this phase added or corrected.
+
+### Stored state, and why the fingerprint earns its keep
+
+§14.3 asks for three pieces of state per connection: the contract version
+applied, a fingerprint of the live `se_*` field set, and when it was last
+verified. `Schema\AppliedSchema` stores all three and reduces them to one of four
+verdicts, as a pure function so every branch is testable without a server.
+
+The fingerprint is the part that turned out to matter. A version alone cannot
+distinguish "the schema is as we left it" from "somebody deleted a field last
+week", and the first symptom of the second is indexing failing for reasons no
+error message explains. The verdict order is deliberate: `behind` is reported
+before `altered`, because a schema missing fields needs the same action either
+way and telling an administrator their schema was tampered with when it is merely
+out of date sends them looking for an intruder.
+
+A fourth verdict, `unrecorded`, covers the schema that is adequate but was
+applied by hand or before the plugin was installed. It is a different statement
+from "verified", and conflating them would claim knowledge this site does not
+have.
+
+### Mode does not determine the rebuild strategy
+
+§10.3 chooses between the alias strategy and the pointer strategy by **detected
+mode**. That is necessary and not sufficient. Solr refuses `CREATEALIAS` when the
+name is already held by a real collection, which is true on every site that has
+not deliberately created an alias — so a SolrCloud site would be told it has
+zero-downtime switching, build a replacement index for an hour, and fail at the
+last step with a finished index nobody is reading.
+
+`LifecycleBackend::rebuild_style()` therefore reports from what the server
+actually has: it resolves the configured name against the cluster's aliases and
+claims `STYLE_ALIAS` only when that name really is one. A SolrCloud site without
+an alias gets `STYLE_POINTER`, which works — SolrEngine switches the collection it
+is configured with — and the admin screen says which it will do before anything
+is built. Detection over assumption, which is the same principle ADR-011 applies
+to versions.
+
+### Replacement indexes are never deleted automatically
+
+§10.3 suggests deleting the previous collection "after a grace period". Phase 7
+does not, and will not. A grace period means a plugin deleting a customer's index
+on a timer, and the only reason the previous index exists is to be the way back
+when something turns out to be wrong two days later. It is offered as an explicit
+action and nothing else.
+
+This is the same stance the migration table in §14.3 already takes on removing a
+field — "Leave it. Removal is not worth the risk" — applied one level up. A
+`drop_index()` call also refuses the index currently configured, so the last line
+of defence does not depend on the UI never offering it.

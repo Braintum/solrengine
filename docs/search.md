@@ -27,6 +27,9 @@ outage invisible to it.
 
 ## Relevance
 
+Tune these under **SolrEngine → Search**. They apply to the next search; no
+reindexing is needed.
+
 | Setting | Default | What it does |
 | --- | --- | --- |
 | Field weights | title 5, taxonomy 1.5, excerpt 2, content 1 | Which fields matter most |
@@ -37,6 +40,20 @@ outage invisible to it.
 
 Taxonomy terms are weighted through a single aggregate field rather than a
 wildcard, because Solr's `qf` takes explicit field names.
+
+Setting a field's weight to `0` stops searching it entirely. Setting every field
+to zero is refused: a site that searches nothing returns nothing to every
+visitor, and the screen that would undo it is not the one they are using.
+
+The minimum-match expression is validated when you save it rather than when a
+visitor searches. An invalid one is not a degraded search — Solr rejects the
+whole request, so every search on the site fails until somebody edits the value
+back. Valid forms are a number (`2`), a percentage (`75%`), or one or more
+`terms<specification` pairs (`2<75% 5<90%`).
+
+On a WooCommerce site, product SKUs and attribute values appear on the list as
+well. SolrEngine supplies a sensible weight for each the first time, and never
+overrules one you have set.
 
 ## When nothing matches
 

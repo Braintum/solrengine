@@ -4,7 +4,7 @@ Tags: search, solr, relevance, faceted search, woocommerce
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.7.0
+Stable tag: 0.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -26,9 +26,10 @@ error.
 
 = Status =
 
-SolrEngine now does the whole job: connect, index, and answer searches. It is
-still a development release and has not been through a full security review, so
-treat a production site with care.
+SolrEngine now does the whole job: connect, index, answer searches, filter a
+catalogue, and administer all of it without touching the filesystem. It is still
+a development release and has not been through a full security review, so treat a
+production site with care.
 
 = Requirements =
 
@@ -184,7 +185,51 @@ and correct. A shop page that looks filtered and is not costs money.
 
 It can be used per site. Network-level configuration is planned.
 
+= Can I reindex without search going wrong while it runs? =
+
+Yes. From SolrEngine → Tools you can build a replacement index alongside the one
+that is answering searches, check it against what WordPress holds, and switch
+over only then. Your previous index is kept afterwards, and SolrEngine never
+deletes it for you — it is the way back if something turns out to be wrong.
+
+= Something is missing from search. How do I find out why? =
+
+SolrEngine → Tools keeps the last fifty indexing runs and the posts that failed
+inside each one, with a link to each. `wp solrengine history --failures` shows
+the same list.
+
 == Changelog ==
+
+= 0.8.0 =
+* A Content screen. Choose which post types are indexed, and map custom fields
+  into the index by picking from the fields your site already uses. The index
+  field name each choice produces is shown beside it.
+* A Search screen. Weight titles, excerpts, content, categories, SKUs and
+  product attributes against each other, adjust how many words a search must
+  match, and switch on a nudge for newer content. An invalid minimum-match
+  expression is refused when you save it rather than breaking every search.
+* A Tools screen. See what your Solr schema is missing, apply it with one
+  button, reindex, and read the history of what has been indexed.
+* Build a replacement index alongside the live one and switch to it when it has
+  been checked, rather than reindexing over the index that is answering
+  searches. In SolrCloud the switch is an alias swap; elsewhere SolrEngine
+  repoints itself at the new collection. The previous index is never deleted for
+  you.
+* Index history. The last fifty runs and the objects that failed inside them are
+  kept in their own tables, pruned automatically, and readable from the Tools
+  screen or "wp solrengine history".
+* SolrEngine now notices when somebody else changes the fields it owns in your
+  schema, and says so rather than letting indexing fail unexplained.
+* Settings that change what a document should contain now say that content
+  already indexed does not reflect them, because changing a setting never
+  rewrites a document that is already there.
+* New commands: "wp solrengine rebuild" and "wp solrengine history".
+* Fixed: a store that lowered the weighting of product SKUs had it silently put
+  back on every request, so the setting appeared to do nothing.
+* Fixed: on a WooCommerce site the index-accuracy check compared against a count
+  that excluded products, so it reported the index as out of step permanently.
+* Fixed: a full index did not commit when it finished, so the last batch could
+  stay invisible to searches for up to a minute and be counted as missing.
 
 = 0.7.0 =
 * WooCommerce. Products are indexed with their SKUs, prices, stock, attributes,
@@ -305,6 +350,10 @@ It can be used per site. Network-level configuration is planned.
 * Coding standards, static analysis and test tooling.
 
 == Upgrade Notice ==
+
+= 0.8.0 =
+Adds screens for indexed content, relevance and tools, and a way to rebuild the
+index without taking search down while it runs. No reindex is required.
 
 = 0.7.0 =
 Adds WooCommerce support. Products are indexed automatically; run a full index

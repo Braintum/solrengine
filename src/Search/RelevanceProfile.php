@@ -91,24 +91,36 @@ final class RelevanceProfile {
 	 * @return self
 	 */
 	public static function from_config( array $config, array $extra = array() ): self {
-		$boosts = array();
+		$declared = array();
 
 		foreach ( (array) ( $config['field_boosts'] ?? array() ) as $field => $boost ) {
-			if ( is_numeric( $boost ) && (float) $boost > 0 ) {
+			if ( is_numeric( $boost ) ) {
+				// Zero is kept for now, not discarded. It is how the settings
+				// screen says "stop searching this field", and a field dropped
+				// here would be indistinguishable from one the site never
+				// mentioned — which is exactly the field an integration is
+				// allowed to supply a default for.
+				$declared[ (string) $field ] = (float) $boost;
+			}
+		}
+
+		$boosts = array() !== $declared ? $declared : self::default_field_boosts();
+
+		foreach ( $extra as $field => $boost ) {
+			// Integration defaults fill gaps; they never overrule a decision.
+			// Until 0.8.0 these were merged over the top, so a store that turned
+			// the SKU weighting down got it silently put back on every request.
+			if ( ! array_key_exists( (string) $field, $boosts ) ) {
 				$boosts[ (string) $field ] = (float) $boost;
 			}
 		}
 
-		if ( array() !== $extra ) {
-			// Merged onto whatever the site configured, or onto the defaults
-			// when it configured nothing. An administrator who has tuned their
-			// own boosts keeps them; the integration only adds fields that did
-			// not exist before it was installed.
-			$boosts = array_merge(
-				array() !== $boosts ? $boosts : self::default_field_boosts(),
-				$extra
-			);
-		}
+		$boosts = array_filter(
+			$boosts,
+			static function ( $boost ): bool {
+				return (float) $boost > 0;
+			}
+		);
 
 		return new self(
 			$boosts,

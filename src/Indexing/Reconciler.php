@@ -11,6 +11,7 @@ use SolrEngine\Backend\BackendRegistry;
 use SolrEngine\Contracts\IndexStatus;
 use SolrEngine\Contracts\Logger;
 use SolrEngine\Contracts\Result;
+use SolrEngine\Documents\IndexedTypes;
 use SolrEngine\Support\Config;
 
 /**
@@ -180,12 +181,24 @@ final class Reconciler {
 	/**
 	 * How many objects WordPress thinks should be indexed.
 	 *
+	 * Public because a rebuild verifies its replacement index against the same
+	 * number before switching to it, and two implementations of "how many
+	 * documents should there be" would eventually disagree.
+	 *
+	 * @since 0.8.0
+	 *
 	 * @return int
 	 */
-	private function expected_count(): int {
+	public function expected_count(): int {
 		global $wpdb;
 
-		$post_types = array_map( 'strval', $this->config->get_array( 'index.post_types', array( 'post', 'page' ) ) );
+		// The site's own answer, not the raw setting. Reading the configured
+		// post types directly excludes anything an integration contributes
+		// through the filter — products, on a WooCommerce site — so the index
+		// holds more than this count says it should and drift is reported on
+		// every pass, for ever. The same split was fixed in the full sync and
+		// the REST endpoint in 0.7.0; this was the third copy.
+		$post_types = IndexedTypes::all( $this->config );
 		$statuses   = array_values( array_map( 'strval', (array) get_post_stati( array( 'public' => true ) ) ) );
 
 		if ( array() === $post_types || array() === $statuses ) {

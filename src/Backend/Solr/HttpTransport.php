@@ -141,6 +141,36 @@ final class HttpTransport {
 	}
 
 	/**
+	 * GET a path within a named collection other than the configured one.
+	 *
+	 * Needed by the rebuild lifecycle, which has to count the documents in a
+	 * replacement index before that index is the live one. The name is checked
+	 * rather than trusted: it becomes a path segment, and a name carrying a
+	 * slash would address a different handler entirely. Names reaching here come
+	 * from configuration and from Solr's own listings, so the check is guarding
+	 * against a future caller rather than against today's.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @param string               $collection Collection or core name.
+	 * @param string               $path       Path relative to the collection.
+	 * @param array<string,scalar> $query      Query parameters.
+	 * @return Result Success carrying the decoded body, or a failure.
+	 */
+	public function get_in( string $collection, string $path, array $query = array() ): Result {
+		if ( ! CollectionName::is_valid( $collection ) ) {
+			return Result::failure( 'invalid_collection', 'That is not a usable collection name.' );
+		}
+
+		return $this->request(
+			'GET',
+			$this->endpoint->with_collection( $collection )->collection_url( $path ),
+			$query,
+			null
+		);
+	}
+
+	/**
 	 * POST JSON to a path within the collection.
 	 *
 	 * @since 0.1.0

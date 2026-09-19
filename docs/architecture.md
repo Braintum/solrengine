@@ -35,6 +35,7 @@ src/Contracts/               Public API
   SearchBackend              Reads
   IndexBackend               Writes
   SchemaBackend              Inspects and, where permitted, changes the schema
+  LifecycleBackend           Builds a replacement index and switches to it
   JobQueue                   Defers work
   Logger                     Records what happened
 src/Support/
@@ -75,6 +76,8 @@ never searches and never saves a post pays for `Bootstrap` and nothing else.
 | `solrengine_facet_definitions` | filter | Register a facet a caller may count by |
 | `solrengine_indexable_post_types` | filter | Declare a post type as indexable. Honoured by the save listeners and by a full sync |
 | `solrengine_suggest_query` | filter | The autocomplete query before it reaches the backend |
+| `solrengine_full_sync_complete` | action | A full run finished. Receives the run state; a run with a `target` was building a replacement index rather than the live one |
+| `solrengine_rebuild_switched` | action | Searches are now answered by a rebuilt index. Receives the index name and the rebuild state |
 
 More arrive with the phases that need them. The plan's section 11.3 lists the
 intended set; each one is public API from 1.0 and needs a test and a docblock

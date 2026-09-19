@@ -8,11 +8,15 @@
 namespace SolrEngine;
 
 use SolrEngine\Admin\ConnectionScreen;
+use SolrEngine\Admin\ContentScreen;
 use SolrEngine\Admin\DashboardScreen;
+use SolrEngine\Admin\SearchScreen;
+use SolrEngine\Admin\ToolsScreen;
 use SolrEngine\Backend\BackendRegistry;
 use SolrEngine\Backend\Solr\EndpointValidator;
 use SolrEngine\Backend\Solr\HttpTransport;
 use SolrEngine\Backend\Solr\SolrBackend;
+use SolrEngine\Contracts\IndexBackend;
 use SolrEngine\Cli\Commands;
 use SolrEngine\Contracts\JobQueue;
 use SolrEngine\Contracts\Logger;
@@ -27,7 +31,10 @@ use SolrEngine\Indexing\Indexer;
 use SolrEngine\Indexing\Queue\ActionSchedulerQueue;
 use SolrEngine\Indexing\Queue\CronQueue;
 use SolrEngine\Indexing\QueueWorker;
+use SolrEngine\Indexing\Rebuild;
 use SolrEngine\Indexing\Reconciler;
+use SolrEngine\Indexing\ReindexNotice;
+use SolrEngine\Indexing\RunHistory;
 use SolrEngine\Integration\WordPress\InstantSearch;
 use SolrEngine\Integration\WordPress\QueryIntegration;
 use SolrEngine\Integration\WordPress\SearchFilters;
@@ -42,6 +49,7 @@ use SolrEngine\Search\QueryTranslator;
 use SolrEngine\Search\RelevanceProfile;
 use SolrEngine\Search\ResponseParser;
 use SolrEngine\Search\SearchService;
+use SolrEngine\Schema\AppliedSchema;
 use SolrEngine\Schema\ContractRegistry;
 use SolrEngine\Schema\SchemaExporter;
 use SolrEngine\Schema\SchemaPlanner;
@@ -336,6 +344,27 @@ final class Bootstrap {
 		);
 
 		$container->share(
+			'indexing.history',
+			static function ( Container $c ): RunHistory {
+				return new RunHistory( (int) $c->get( 'site_id' ) );
+			}
+		);
+
+		$container->share(
+			'indexing.reindex_notice',
+			static function ( Container $c ): ReindexNotice {
+				return new ReindexNotice( $c->get( 'config' ) );
+			}
+		);
+
+		$container->share(
+			'schema.applied',
+			static function ( Container $c ): AppliedSchema {
+				return new AppliedSchema( $c->get( 'config' ) );
+			}
+		);
+
+		$container->share(
 			'indexing.full_sync',
 			static function ( Container $c ): ?FullSync {
 				$indexer = $c->get( 'indexing.indexer' );
@@ -349,7 +378,48 @@ final class Bootstrap {
 					$c->get( 'indexing.queue' ),
 					$c->get( 'config' ),
 					$c->get( 'logger' ),
-					(int) $c->get( 'site_id' )
+					(int) $c->get( 'site_id' ),
+					$c->get( 'indexing.history' )
+				);
+			}
+		);
+
+		$container->share(
+			'indexing.rebuild',
+			static function ( Container $c ): ?Rebuild {
+				if ( null === $c->get( 'backends' )->lifecycle() ) {
+					return null;
+				}
+
+				return new Rebuild(
+					$c->get( 'backends' ),
+					$c->get( 'config' ),
+					$c->get( 'logger' ),
+					$c->get( 'indexing.reconciler' ),
+					$c->get( 'indexing.reindex_notice' ),
+					static function ( string $target ) use ( $c ): ?FullSync {
+						// A second synchronisation, writing to a second index,
+						// on its own channel so its progress cannot be mistaken
+						// for the live one's. Everything else about it — the
+						// cursor, the adaptive batch size, the failure handling —
+						// is the code that already indexes this site.
+						$backend = self::backend_for( $c, $target );
+
+						if ( null === $backend ) {
+							return null;
+						}
+
+						return new FullSync(
+							new Indexer( $backend, $c->get( 'documents.post_builder' ), $c->get( 'logger' ) ),
+							$c->get( 'indexing.queue' ),
+							$c->get( 'config' ),
+							$c->get( 'logger' ),
+							(int) $c->get( 'site_id' ),
+							$c->get( 'indexing.history' ),
+							Rebuild::CHANNEL,
+							$target
+						);
+					}
 				);
 			}
 		);
@@ -504,34 +574,7 @@ final class Bootstrap {
 		$registry = $container->get( 'backends' );
 
 		$factory = static function () use ( $container ): ?SolrBackend {
-			$config = $container->get( 'config' );
-
-			$validator = $container->get( 'solr.endpoint_validator' );
-
-			$endpoint = $validator->validate(
-				$config->get_string( 'connection.endpoint' ),
-				$config->get_string( 'connection.collection' ),
-				$config->get_bool( 'connection.allow_private_ip' )
-			);
-
-			if ( $endpoint->is_failure() ) {
-				return null;
-			}
-
-			return new SolrBackend(
-				new HttpTransport(
-					$endpoint->value(),
-					$container->get( 'credentials' ),
-					$container->get( 'logger' ),
-					$config->get_int( 'connection.read_timeout', 10 ),
-					$config->get_bool( 'connection.verify_tls', true )
-				),
-				$container->get( 'schema.planner' ),
-				$container->get( 'schema.exporter' ),
-				$config->get_int( 'index.commit_within_ms', 60000 ),
-				$container->get( 'search.translator' ),
-				$container->get( 'search.parser' )
-			);
+			return self::solr_backend( $container );
 		};
 
 		$registry->register(
@@ -540,6 +583,63 @@ final class Bootstrap {
 			$factory,
 			$factory
 		);
+	}
+
+	/**
+	 * Build a Solr backend, optionally pointed at a collection of our choosing.
+	 *
+	 * One builder for both uses. A rebuild needs a backend addressing the
+	 * replacement index rather than the live one, and the alternative — a second
+	 * construction path — is how the two end up differing in a timeout or a TLS
+	 * setting that nobody notices until a rebuild behaves unlike everything else.
+	 *
+	 * The endpoint is validated either way. A collection name reaching here has
+	 * come from Solr's own listing or from a form, and neither is a reason to
+	 * skip the check that every other request goes through.
+	 *
+	 * @param Container $container  Service container.
+	 * @param string    $collection Collection to address, or empty for the
+	 *                              configured one.
+	 * @return SolrBackend|null
+	 */
+	private static function solr_backend( Container $container, string $collection = '' ): ?SolrBackend {
+		$config = $container->get( 'config' );
+
+		$endpoint = $container->get( 'solr.endpoint_validator' )->validate(
+			$config->get_string( 'connection.endpoint' ),
+			'' !== $collection ? $collection : $config->get_string( 'connection.collection' ),
+			$config->get_bool( 'connection.allow_private_ip' )
+		);
+
+		if ( $endpoint->is_failure() ) {
+			return null;
+		}
+
+		return new SolrBackend(
+			new HttpTransport(
+				$endpoint->value(),
+				$container->get( 'credentials' ),
+				$container->get( 'logger' ),
+				$config->get_int( 'connection.read_timeout', 10 ),
+				$config->get_bool( 'connection.verify_tls', true )
+			),
+			$container->get( 'schema.planner' ),
+			$container->get( 'schema.exporter' ),
+			$config->get_int( 'index.commit_within_ms', 60000 ),
+			$container->get( 'search.translator' ),
+			$container->get( 'search.parser' )
+		);
+	}
+
+	/**
+	 * An index backend addressing one named index.
+	 *
+	 * @param Container $container Service container.
+	 * @param string    $target    Index name.
+	 * @return IndexBackend|null
+	 */
+	private static function backend_for( Container $container, string $target ): ?IndexBackend {
+		return self::solr_backend( $container, $target );
 	}
 
 	/**
@@ -559,42 +659,115 @@ final class Bootstrap {
 		$this->register_rest( $container );
 
 		if ( is_admin() ) {
-			add_action(
-				'admin_menu',
-				static function () use ( $container ): void {
-					// Constructed here rather than at registration time, so a
-					// front-end request never builds an admin screen.
-					( new ConnectionScreen(
-						$container->get( 'config' ),
-						$container->get( 'credentials' ),
-						$container->get( 'diagnostics.connection' ),
-						$container->get( 'schema.contracts' ),
-						$container->get( 'schema.exporter' ),
-						$container->get( 'search.facets' )
-					) )->add_menu();
-
-					( new DashboardScreen( $container ) )->add_menu();
-				},
-				9
-			);
-
-			add_action(
-				'admin_post_solrengine_save_connection',
-				static function () use ( $container ): void {
-					( new ConnectionScreen(
-						$container->get( 'config' ),
-						$container->get( 'credentials' ),
-						$container->get( 'diagnostics.connection' ),
-						$container->get( 'schema.contracts' ),
-						$container->get( 'schema.exporter' )
-					) )->handle_save();
-				}
-			);
+			$this->register_admin( $container );
 		}
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			$this->register_cli();
 		}
+	}
+
+	/**
+	 * Register the admin screens and the actions their forms post to.
+	 *
+	 * Screens are constructed inside the callbacks, not here. Registering a
+	 * handler must not build the screen that handles it: admin_post fires once
+	 * per request for one action, and constructing five screens to run one of
+	 * them would resolve a backend, a diagnostic and a schema planner for
+	 * nothing on every admin page load.
+	 *
+	 * @param Container $container Service container.
+	 * @return void
+	 */
+	private function register_admin( Container $container ): void {
+		$connection = static function () use ( $container ): ConnectionScreen {
+			return new ConnectionScreen(
+				$container->get( 'config' ),
+				$container->get( 'credentials' ),
+				$container->get( 'diagnostics.connection' )
+			);
+		};
+
+		$content = static function () use ( $container ): ContentScreen {
+			return new ContentScreen(
+				$container->get( 'config' ),
+				$container->get( 'indexing.reindex_notice' )
+			);
+		};
+
+		$search = static function () use ( $container ): SearchScreen {
+			return new SearchScreen(
+				$container->get( 'config' ),
+				$container->get( 'search.facets' )
+			);
+		};
+
+		add_action(
+			'admin_menu',
+			static function () use ( $container, $connection, $content, $search ): void {
+				// Order is the setup order from the plan's section 17.3, not
+				// alphabetical: connect, see whether it worked, choose what to
+				// index, decide how it ranks, then run it.
+				$connection()->add_menu();
+
+				( new DashboardScreen( $container ) )->add_menu();
+
+				$content()->add_menu();
+				$search()->add_menu();
+
+				( new ToolsScreen( $container ) )->add_menu();
+			},
+			9
+		);
+
+		add_action(
+			'admin_post_solrengine_save_connection',
+			static function () use ( $connection ): void {
+				$connection()->handle_save();
+			}
+		);
+
+		add_action(
+			'admin_post_' . ContentScreen::ACTION,
+			static function () use ( $content ): void {
+				$content()->handle_save();
+			}
+		);
+
+		add_action(
+			'admin_post_' . SearchScreen::ACTION,
+			static function () use ( $search ): void {
+				$search()->handle_save();
+			}
+		);
+
+		add_action(
+			'admin_post_' . SearchScreen::ACTION . '_reset',
+			static function () use ( $search ): void {
+				$search()->handle_reset();
+			}
+		);
+
+		add_action(
+			'admin_post_' . ToolsScreen::ACTION_SCHEMA,
+			static function () use ( $container ): void {
+				( new ToolsScreen( $container ) )->handle_schema();
+			}
+		);
+
+		add_action(
+			'admin_post_' . ToolsScreen::ACTION_INDEX,
+			static function () use ( $container ): void {
+				( new ToolsScreen( $container ) )->handle_index();
+			}
+		);
+
+		add_action(
+			'admin_post_' . ToolsScreen::ACTION_REBUILD,
+			static function () use ( $container ): void {
+				( new ToolsScreen( $container ) )->handle_rebuild();
+			}
+		);
 	}
 
 	/**
@@ -617,6 +790,8 @@ final class Bootstrap {
 		\WP_CLI::add_command( 'solrengine status', array( $commands, 'status' ) );
 		\WP_CLI::add_command( 'solrengine schema', array( $commands, 'schema' ) );
 		\WP_CLI::add_command( 'solrengine index', array( $commands, 'index' ) );
+		\WP_CLI::add_command( 'solrengine rebuild', array( $commands, 'rebuild' ) );
+		\WP_CLI::add_command( 'solrengine history', array( $commands, 'history' ) );
 	}
 
 	/**
@@ -727,6 +902,47 @@ final class Bootstrap {
 
 				if ( $sync instanceof FullSync ) {
 					$sync->run_batch();
+				}
+			}
+		);
+
+		// The rebuild channel's own hook. A separate one so that a queued batch
+		// is always handled by the synchronisation that scheduled it: one hook
+		// shared between two destinations would let a rebuild's batch be run by
+		// the instance writing to the live index.
+		add_action(
+			FullSync::HOOK . '_' . Rebuild::CHANNEL,
+			static function () use ( $container ): void {
+				$rebuild = $container->get( 'indexing.rebuild' );
+
+				if ( ! $rebuild instanceof Rebuild ) {
+					return;
+				}
+
+				// verify() runs the outstanding batch's continuation through the
+				// same channel and records where the rebuild has got to, so the
+				// admin screen is accurate without polling anything itself.
+				$rebuild->run_batch();
+			}
+		);
+
+		add_action(
+			'solrengine_full_sync_complete',
+			static function ( $run ) use ( $container ): void {
+				if ( is_array( $run ) && '' !== (string) ( $run['target'] ?? '' ) ) {
+					// A rebuild finished building. Nothing is serving from it
+					// yet, so the live index is still missing whatever the
+					// notice is about; switching over is what clears it.
+					return;
+				}
+
+				// Everything the index was missing, it now has. Cleared here
+				// rather than on each screen, so a run started from WP-CLI
+				// clears it too.
+				$notice = $container->get( 'indexing.reindex_notice' );
+
+				if ( $notice instanceof ReindexNotice ) {
+					$notice->clear();
 				}
 			}
 		);

@@ -3,7 +3,7 @@
  * Plugin Name:       SolrEngine
  * Plugin URI:        https://www.solrengine.com
  * Description:       Apache Solr powered search for WordPress. Faster, more relevant results, with WordPress search as an automatic fallback.
- * Version:           0.7.0
+ * Version:           0.8.0
  * Requires at least: 6.5
  * Requires PHP:      7.4
  * Author:            SolrEngine
@@ -39,7 +39,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SOLRENGINE_VERSION', '0.7.0' );
+define( 'SOLRENGINE_VERSION', '0.8.0' );
 define( 'SOLRENGINE_PLUGIN_FILE', __FILE__ );
 define( 'SOLRENGINE_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SOLRENGINE_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -181,6 +181,21 @@ function solrengine_activate() {
 	}
 
 	update_option( 'solrengine_version', SOLRENGINE_VERSION, false );
+
+	/*
+	 * The two history tables. Creating tables is local work against a database
+	 * the request already has open, so it does not break the rule above about
+	 * activation staying off the network.
+	 *
+	 * Activation is not the only path that creates them — a site upgraded rather
+	 * than activated never runs this — so the code that writes a run record
+	 * checks as well. This is the eager half, so an administrator who activates
+	 * and looks at the Tools screen sees an empty history rather than a notice
+	 * saying history is unavailable.
+	 */
+	require_once SOLRENGINE_PLUGIN_DIR . 'vendor/autoload.php';
+
+	\SolrEngine\Support\Tables::install();
 }
 register_activation_hook( __FILE__, 'solrengine_activate' );
 

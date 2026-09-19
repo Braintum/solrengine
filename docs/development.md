@@ -110,6 +110,25 @@ tests/Integration/  WordPress, mocked backend.
 tests/Backend/      WordPress and a real Solr.
 ```
 
+## Database tables
+
+Two, both owned by `Support\Tables`:
+
+| Table | Holds |
+| --- | --- |
+| `{prefix}solrengine_index_runs` | One row per indexing run, pruned to the most recent fifty |
+| `{prefix}solrengine_failures` | Objects that failed inside a run, capped per run |
+
+Created on activation, and checked again the first time a run is recorded —
+a site that was upgraded rather than activated never runs the activation hook.
+Bump `Tables::VERSION` when a column changes; `dbDelta` does the rest.
+
+Times are Unix timestamps in `bigint` columns rather than `datetime`. A
+`datetime` column carries no timezone, so every reader has to know which one the
+writer meant, and WordPress has three plausible answers.
+
+Everything else lives in options, and nothing SolrEngine writes is autoloaded.
+
 ## Conventions
 
 - `StudlyCase` classes, `snake_case` methods and variables, PSR-4 autoloading.
@@ -121,6 +140,12 @@ tests/Backend/      WordPress and a real Solr.
 - Backend calls return `Result`, never throw. WordPress has to keep rendering
   when Solr does not.
 - Nothing calls `error_log()` directly. Use the `Logger` contract.
+- Admin screens extend `Admin\Screen`, which holds the capability check, the
+  redirect-with-notice and the form helpers. Each handler writes its own
+  `check_admin_referer()` call: a nonce check is what a security review greps
+  each handler for, and static analysis cannot follow one into a parent class.
+- A handler reads `$_POST` once, immediately after that nonce check, and passes
+  the array on. Nothing further down touches a superglobal.
 
 ## The 0.1.0 prototype
 

@@ -62,4 +62,41 @@ final class DocumentRefTest extends TestCase {
 
 		$this->assertFalse( $one->equals( $two ) );
 	}
+
+	public function test_a_document_id_round_trips(): void {
+		$ref = new DocumentRef( 3, 'post', 42 );
+
+		$parsed = DocumentRef::from_document_id( $ref->document_id() );
+
+		$this->assertNotNull( $parsed );
+		$this->assertSame( 3, $parsed->site_id() );
+		$this->assertSame( 'post', $parsed->object_type() );
+		$this->assertSame( 42, $parsed->object_id() );
+	}
+
+	/**
+	 * @dataProvider unparseable_ids
+	 *
+	 * @param string $id Document ID.
+	 */
+	public function test_an_id_that_is_not_ours_parses_to_nothing( string $id ): void {
+		// A row to skip, not an error to raise. These are read back out of a
+		// failure log, where a malformed record is not worth failing over.
+		$this->assertNull( DocumentRef::from_document_id( $id ) );
+	}
+
+	/**
+	 * @return array<int,array{0:string}>
+	 */
+	public function unparseable_ids(): array {
+		return array(
+			array( '' ),
+			array( 'se:1:post' ),
+			array( 'se:1:post:42:extra' ),
+			array( 'xx:1:post:42' ),
+			array( 'se:one:post:42' ),
+			array( 'se:1:post:forty' ),
+			array( 'se:1::42' ),
+		);
+	}
 }

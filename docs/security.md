@@ -98,6 +98,35 @@ SolrEngine can modify a customer's Solr schema. Capability is not consent, so:
 The additive restriction is enforced twice: once when the plan is built, and
 again in `SolrBackend::apply()` immediately before anything is sent.
 
+## Index lifecycle
+
+Building a replacement index means naming collections, and a collection name
+becomes a path segment in a URL. Every name is checked against
+`CollectionName::is_valid()` before it reaches a request, so a name carrying a
+slash, a query string or a `..` cannot address a handler other than the one
+intended. Names arriving from Solr's own listings are checked as well as names
+arriving from a form; the point of the guard is that it does not depend on
+knowing where a name came from.
+
+Deletion is never automatic. Switching to a new index leaves the old one in
+place, `drop_index()` refuses the index currently configured, and the only way
+to remove one is an administrator asking for it by name.
+
+## Admin screens
+
+Every screen requires `manage_options`, and every form handler verifies a nonce
+before reading a single value from the request. The two checks answer different
+questions — "may this user do this" and "did this user ask for it" — and a
+cross-site request from an administrator's own browser passes the first.
+
+The capability check is shared in `Admin\Screen`; the nonce check is written out
+in each handler rather than shared, deliberately. It is the check a review greps
+for, and static analysis cannot follow one into a parent class.
+
+Each handler reads `$_POST` once, immediately after that nonce check, and passes
+the values on. Nothing below that point touches a superglobal, so there is no
+path by which a helper reads request data that was never verified.
+
 ## Data exposure
 
 By default only publicly visible content is indexed. Drafts, private posts,

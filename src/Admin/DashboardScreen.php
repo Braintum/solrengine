@@ -11,7 +11,9 @@ use SolrEngine\Backend\BackendRegistry;
 use SolrEngine\Contracts\IndexStatus;
 use SolrEngine\Contracts\JobQueue;
 use SolrEngine\Indexing\FullSync;
+use SolrEngine\Indexing\Rebuild;
 use SolrEngine\Indexing\Reconciler;
+use SolrEngine\Indexing\ReindexNotice;
 use SolrEngine\Rest\RateLimiter;
 use SolrEngine\Support\Config;
 use SolrEngine\Support\Container;
@@ -162,6 +164,8 @@ final class DashboardScreen {
 
 					$this->render_queue_row( $queue );
 					$this->render_sync_row( $sync );
+					$this->render_rebuild_row();
+					$this->render_reindex_row();
 					$this->render_drift_row( $reconciler );
 					$this->render_limiter_row( $limiter );
 					?>
@@ -172,15 +176,26 @@ final class DashboardScreen {
 				<a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=' . ConnectionScreen::SLUG ) ); ?>">
 					<?php esc_html_e( 'Connection settings', 'solrengine' ); ?>
 				</a>
+				<a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=' . ContentScreen::SLUG ) ); ?>">
+					<?php esc_html_e( 'What is indexed', 'solrengine' ); ?>
+				</a>
+				<a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=' . SearchScreen::SLUG ) ); ?>">
+					<?php esc_html_e( 'Relevance', 'solrengine' ); ?>
+				</a>
+				<a class="button button-primary" href="<?php echo esc_url( admin_url( 'admin.php?page=' . ToolsScreen::SLUG ) ); ?>">
+					<?php esc_html_e( 'Schema, reindex and history', 'solrengine' ); ?>
+				</a>
 			</p>
 
 			<h2><?php esc_html_e( 'Indexing', 'solrengine' ); ?></h2>
 			<p>
-				<?php esc_html_e( 'Indexing is run from the command line, where there is no web-server timeout to fight:', 'solrengine' ); ?>
+				<?php esc_html_e( 'Indexing can be started from the Tools screen, or run from the command line, where there is no web-server timeout to fight:', 'solrengine' ); ?>
 			</p>
 			<pre class="code" style="padding:1em;background:#f6f7f7;max-width:820px"><code>wp solrengine index
 wp solrengine index progress
-wp solrengine index resume</code></pre>
+wp solrengine index resume
+wp solrengine rebuild start
+wp solrengine history</code></pre>
 		</div>
 		<?php
 	}
@@ -262,6 +277,69 @@ wp solrengine index resume</code></pre>
 				human_time_diff( (int) $run['updated_at'] )
 			),
 			'complete' === $run['state'] ? 'good' : ( 'running' === $run['state'] ? 'idle' : 'warn' )
+		);
+	}
+
+	/**
+	 * Render the rebuild row, when one is under way or has just switched.
+	 *
+	 * Absent the rest of the time. A dashboard row that says "no rebuild in
+	 * progress" is a row that is wrong to read on every visit but one.
+	 *
+	 * @return void
+	 */
+	private function render_rebuild_row(): void {
+		$rebuild = $this->container->get( 'indexing.rebuild' );
+
+		if ( ! $rebuild instanceof Rebuild ) {
+			return;
+		}
+
+		$state = $rebuild->state();
+
+		if ( null === $state ) {
+			return;
+		}
+
+		$labels = array(
+			'building' => __( 'A replacement index is being built. Searches are still answered by the current one.', 'solrengine' ),
+			'ready'    => __( 'A replacement index is built and checked, and is waiting for you to switch to it.', 'solrengine' ),
+			'switched' => __( 'Searches are answered by the rebuilt index. The previous one is still on your server.', 'solrengine' ),
+		);
+
+		$this->row(
+			__( 'Rebuild', 'solrengine' ),
+			sprintf(
+				/* translators: 1: state description, 2: index name. */
+				__( '%1$s (%2$s)', 'solrengine' ),
+				$labels[ (string) $state['state'] ] ?? (string) $state['state'],
+				(string) $state['target']
+			),
+			'ready' === $state['state'] ? 'warn' : 'idle'
+		);
+	}
+
+	/**
+	 * Render the outstanding-reindex row.
+	 *
+	 * @return void
+	 */
+	private function render_reindex_row(): void {
+		$notice = $this->container->get( 'indexing.reindex_notice' );
+
+		if ( ! $notice instanceof ReindexNotice || ! $notice->is_required() ) {
+			return;
+		}
+
+		$this->row(
+			__( 'Outstanding', 'solrengine' ),
+			sprintf(
+				/* translators: 1: reason a reindex is needed, 2: human time difference. */
+				__( 'Content in the index does not reflect a change made %2$s ago: %1$s. A settings change never rewrites documents that are already indexed.', 'solrengine' ),
+				$notice->reason(),
+				human_time_diff( $notice->since() )
+			),
+			'warn'
 		);
 	}
 

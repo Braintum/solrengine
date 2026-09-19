@@ -7,13 +7,10 @@
 
 namespace SolrEngine\Admin;
 
-use SolrEngine\Backend\Solr\EndpointValidator;
 use SolrEngine\Diagnostics\ConnectionDiagnostic;
 use SolrEngine\Diagnostics\DiagnosticReport;
-use SolrEngine\Schema\ContractRegistry;
-use SolrEngine\Schema\SchemaExporter;
 use SolrEngine\Integration\WooCommerce\WooCommerce;
-use SolrEngine\Search\FacetRegistry;
+use SolrEngine\Schema\AppliedSchema;
 use SolrEngine\Support\Config;
 use SolrEngine\Support\Credentials;
 
@@ -35,9 +32,14 @@ use SolrEngine\Support\Credentials;
  * - The password is never rendered back into the form. The field shows whether
  *   one is set and offers to replace it.
  *
+ * Narrowed in 0.8.0 to the connection itself. The schema it used to export moved
+ * to Tools, beside the plan that applies it, and the filters it used to list
+ * moved to Search, beside the relevance they belong with. Both were here for the
+ * reason everything ends up on the first screen somebody builds.
+ *
  * @since 0.1.0
  */
-final class ConnectionScreen {
+final class ConnectionScreen extends Screen {
 
 	/**
 	 * Menu and page slug.
@@ -68,66 +70,48 @@ final class ConnectionScreen {
 	private $diagnostic;
 
 	/**
-	 * Contract registry.
-	 *
-	 * @var ContractRegistry
-	 */
-	private $contracts;
-
-	/**
-	 * Schema exporter.
-	 *
-	 * @var SchemaExporter
-	 */
-	private $exporter;
-
-	/**
-	 * Registered facets.
-	 *
-	 * @var FacetRegistry
-	 */
-	private $facets;
-
-	/**
 	 * Constructor.
 	 *
 	 * @param Config               $config      Configuration.
 	 * @param Credentials          $credentials Credential store.
 	 * @param ConnectionDiagnostic $diagnostic  Connection diagnostic.
-	 * @param ContractRegistry     $contracts   Contract registry.
-	 * @param SchemaExporter       $exporter    Schema exporter.
-	 * @param FacetRegistry|null   $facets      Registered facets.
 	 */
 	public function __construct(
 		Config $config,
 		Credentials $credentials,
-		ConnectionDiagnostic $diagnostic,
-		ContractRegistry $contracts,
-		SchemaExporter $exporter,
-		?FacetRegistry $facets = null
+		ConnectionDiagnostic $diagnostic
 	) {
 		$this->config      = $config;
 		$this->credentials = $credentials;
 		$this->diagnostic  = $diagnostic;
-		$this->contracts   = $contracts;
-		$this->exporter    = $exporter;
-		$this->facets      = $facets ?? new FacetRegistry();
 	}
 
 	/**
-	 * Register the screen.
+	 * {@inheritDoc}
 	 *
-	 * @since 0.1.0
-	 *
-	 * @return void
+	 * @return string
 	 */
-	public function register(): void {
-		add_action( 'admin_menu', array( $this, 'add_menu' ) );
-		add_action( 'admin_post_solrengine_save_connection', array( $this, 'handle_save' ) );
+	public function slug(): string {
+		return self::SLUG;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @return string
+	 */
+	public function label(): string {
+		return __( 'Connection', 'solrengine' );
 	}
 
 	/**
 	 * Add the menu entry.
+	 *
+	 * This is the one screen that is also the top-level menu, and it registers
+	 * itself as a submenu as well. Without that, WordPress generates a first
+	 * submenu item labelled with the menu title, so the list would read
+	 * "SolrEngine, Dashboard, Content" and nothing would say which of them holds
+	 * the connection settings.
 	 *
 	 * @since 0.1.0
 	 *
@@ -143,6 +127,15 @@ final class ConnectionScreen {
 			'dashicons-search',
 			80
 		);
+
+		add_submenu_page(
+			self::SLUG,
+			$this->label(),
+			$this->label(),
+			'manage_options',
+			self::SLUG,
+			array( $this, 'render' )
+		);
 	}
 
 	/**
@@ -153,10 +146,7 @@ final class ConnectionScreen {
 	 * @return void
 	 */
 	public function handle_save(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You are not allowed to change these settings.', 'solrengine' ), '', array( 'response' => 403 ) );
-		}
-
+		$this->require_manage();
 		check_admin_referer( 'solrengine_save_connection' );
 
 		$endpoint   = isset( $_POST['endpoint'] ) ? sanitize_text_field( wp_unslash( $_POST['endpoint'] ) ) : '';
@@ -165,8 +155,20 @@ final class ConnectionScreen {
 		$private    = ! empty( $_POST['allow_private_ip'] );
 		$verify_tls = ! empty( $_POST['verify_tls'] );
 
+		$moved = $endpoint !== $this->config->get_string( 'connection.endpoint' )
+			|| $collection !== $this->config->get_string( 'connection.collection' );
+
 		$this->config->set( 'connection.endpoint', $endpoint );
 		$this->config->set( 'connection.collection', $collection );
+
+		if ( $moved ) {
+			// Everything recorded about the schema described the collection this
+			// site was pointed at a moment ago. Keeping it would report a
+			// different server's schema as verified, and report an untouched one
+			// as tampered with.
+			( new AppliedSchema( $this->config ) )->forget();
+		}
+
 		$this->config->set( 'connection.allow_private_ip', $private );
 		$this->config->set( 'connection.verify_tls', $verify_tls );
 		$this->config->set( 'search.enabled', ! empty( $_POST['search_enabled'] ) );
@@ -194,17 +196,7 @@ final class ConnectionScreen {
 			$this->credentials->forget();
 		}
 
-		wp_safe_redirect(
-			add_query_arg(
-				array(
-					'page'              => self::SLUG,
-					'solrengine_notice' => $notice,
-				),
-				admin_url( 'admin.php' )
-			)
-		);
-
-		exit;
+		$this->back( $notice );
 	}
 
 	/**
@@ -215,7 +207,7 @@ final class ConnectionScreen {
 	 * @return void
 	 */
 	public function render(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! $this->can_manage() ) {
 			return;
 		}
 
@@ -231,7 +223,14 @@ final class ConnectionScreen {
 		<div class="wrap">
 			<h1><?php esc_html_e( 'SolrEngine', 'solrengine' ); ?></h1>
 
-			<?php $this->render_notice(); ?>
+			<?php
+			$this->render_notice(
+				array(
+					'saved'              => array( 'success', __( 'Connection settings saved.', 'solrengine' ) ),
+					'credentials_failed' => array( 'error', __( 'The settings were saved, but the password could not be stored securely. Set SOLRENGINE_SOLR_USER and SOLRENGINE_SOLR_PASSWORD in wp-config.php instead.', 'solrengine' ) ),
+				)
+			);
+			?>
 
 			<h2><?php esc_html_e( 'Connection', 'solrengine' ); ?></h2>
 
@@ -429,65 +428,25 @@ final class ConnectionScreen {
 				<?php submit_button( __( 'Save settings', 'solrengine' ) ); ?>
 			</form>
 
-			<?php $this->render_filters_section(); ?>
-
 			<?php if ( null !== $tested ) : ?>
 				<h2><?php esc_html_e( 'Diagnosis', 'solrengine' ); ?></h2>
 				<?php $this->render_report( $tested ); ?>
+
+				<p class="description">
+					<?php
+					printf(
+						/* translators: %s: link to the Tools screen. */
+						esc_html__( 'Schema changes, reindexing and the run history are on the %s screen.', 'solrengine' ),
+						sprintf(
+							'<a href="%s">%s</a>',
+							esc_url( admin_url( 'admin.php?page=' . ToolsScreen::SLUG ) ),
+							esc_html__( 'Tools', 'solrengine' )
+						)
+					);
+					?>
+				</p>
 			<?php endif; ?>
-
-			<h2><?php esc_html_e( 'Schema', 'solrengine' ); ?></h2>
-			<p>
-				<?php esc_html_e( 'If SolrEngine cannot change your schema, or you would rather do it yourself, add the following to your managed-schema file. These are the same changes SolrEngine would make.', 'solrengine' ); ?>
-			</p>
-			<textarea
-				readonly
-				rows="14"
-				class="large-text code"
-				onclick="this.select()"
-			><?php echo esc_textarea( $this->exporter->to_xml( $this->contracts->current() ) ); ?></textarea>
 		</div>
-		<?php
-	}
-
-	/**
-	 * Render what a visitor can filter by, and how to show it.
-	 *
-	 * Read-only, deliberately. Editing facet definitions is a later phase, and
-	 * a half-built editor over a contract that is still moving would be worse
-	 * than a list. What an administrator needs today is to know the feature
-	 * exists, what it will offer, and the one thing that stops it working.
-	 *
-	 * @return void
-	 */
-	private function render_filters_section(): void {
-		$facets = $this->facets->available();
-
-		?>
-		<h2><?php esc_html_e( 'Filters', 'solrengine' ); ?></h2>
-
-		<?php if ( array() === $facets ) : ?>
-			<p><?php esc_html_e( 'No filters are registered yet. Registering a public taxonomy, or adding one in code, makes it available here.', 'solrengine' ); ?></p>
-		<?php else : ?>
-			<p>
-				<?php esc_html_e( 'Visitors can narrow search results by the following. Add the "Search filters" block to your search results template, or use the shortcode below in a classic theme.', 'solrengine' ); ?>
-			</p>
-
-			<ul class="ul-disc">
-				<?php foreach ( $facets as $key => $label ) : ?>
-					<li>
-						<strong><?php echo esc_html( $label ); ?></strong>
-						<code><?php echo esc_html( (string) $key ); ?></code>
-					</li>
-				<?php endforeach; ?>
-			</ul>
-
-			<p><code>[solrengine_filters]</code></p>
-
-			<p class="description">
-				<?php esc_html_e( 'Category filters read a field whose format changed in version 0.6.0. If they show nothing, run a full reindex once from the dashboard.', 'solrengine' ); ?>
-			</p>
-		<?php endif; ?>
 		<?php
 	}
 
@@ -538,29 +497,5 @@ final class ConnectionScreen {
 		}
 
 		echo '</tbody></table>';
-	}
-
-	/**
-	 * Render the notice from a redirect, if any.
-	 *
-	 * @return void
-	 */
-	private function render_notice(): void {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only display of a redirect flag.
-		$notice = isset( $_GET['solrengine_notice'] ) ? sanitize_key( wp_unslash( $_GET['solrengine_notice'] ) ) : '';
-
-		if ( 'saved' === $notice ) {
-			echo '<div class="notice notice-success is-dismissible"><p>'
-				. esc_html__( 'Connection settings saved.', 'solrengine' )
-				. '</p></div>';
-
-			return;
-		}
-
-		if ( 'credentials_failed' === $notice ) {
-			echo '<div class="notice notice-error is-dismissible"><p>'
-				. esc_html__( 'The settings were saved, but the password could not be stored securely. Set SOLRENGINE_SOLR_USER and SOLRENGINE_SOLR_PASSWORD in wp-config.php instead.', 'solrengine' )
-				. '</p></div>';
-		}
 	}
 }

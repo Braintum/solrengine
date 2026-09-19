@@ -120,6 +120,21 @@ final class Config {
 				'search.relevance'              => array(),
 
 				'runtime.debug'                 => false,
+
+				// What this site knows about the schema it is pointed at: the
+				// contract version applied, a fingerprint of the se_* field set
+				// as it was left, and when that was last confirmed. See the
+				// plan's section 14.3 and Schema\AppliedSchema.
+				'runtime.schema_version'        => 0,
+				'runtime.schema_fingerprint'    => '',
+				'runtime.schema_verified_at'    => 0,
+
+				// Whether a setting has changed that existing documents do not
+				// reflect. Solr never rewrites a document because a schema or a
+				// field map changed, so the gap is recorded rather than left for
+				// somebody to discover.
+				'runtime.reindex_reason'        => '',
+				'runtime.reindex_since'         => 0,
 			),
 			$defaults
 		);

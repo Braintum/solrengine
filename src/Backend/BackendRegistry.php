@@ -8,6 +8,7 @@
 namespace SolrEngine\Backend;
 
 use SolrEngine\Contracts\IndexBackend;
+use SolrEngine\Contracts\LifecycleBackend;
 use SolrEngine\Contracts\SchemaBackend;
 use SolrEngine\Contracts\SearchBackend;
 use SolrEngine\Support\Config;
@@ -199,6 +200,30 @@ final class BackendRegistry {
 		$instance = $this->resolve( 'search', $id, $this->search_factories );
 
 		return $instance instanceof SchemaBackend ? $instance : null;
+	}
+
+	/**
+	 * The selected lifecycle backend, or null when it cannot rebuild.
+	 *
+	 * Separate for the same reason schema() is: a managed backend rebuilds its
+	 * own indexes on its own schedule and would report nothing useful here, and
+	 * callers must handle null rather than assuming every backend can build a
+	 * replacement index alongside the live one.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @return LifecycleBackend|null
+	 */
+	public function lifecycle(): ?LifecycleBackend {
+		$id = $this->selected_id();
+
+		if ( '' === $id ) {
+			return null;
+		}
+
+		$instance = $this->resolve( 'index', $id, $this->index_factories );
+
+		return $instance instanceof LifecycleBackend ? $instance : null;
 	}
 
 	/**

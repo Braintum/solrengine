@@ -1968,7 +1968,7 @@ Each phase ends in something demonstrable. No phase is "refactoring".
 | **P4 — Suggest and instant search** ✅ | Autocomplete in the theme's search box | Suggester configuration and scheduled build, `suggest` endpoint, accessible front-end component, caching | Medium — §19.4 |
 | **P5 — Facets** ✅ | Generic faceted search | Facet registry, JSON Facet translation, multi-select, hierarchical taxonomy facets, `facets` endpoint, filter blocks and shortcodes | Medium |
 | **P6 — WooCommerce** ✅ | Fast product search and catalogue filtering | Product and variation mapping, visibility rules, price and attribute facets, Product Collection block integration, classic shop loop integration | **High — §15.4, §15.6** |
-| **P7 — Advanced administration** | Power users stop needing the filesystem | Field mapping UI, relevance tuning, schema migration UX, alias-based zero-downtime reindex, index history | Medium |
+| **P7 — Advanced administration** ✅ | Power users stop needing the filesystem | Field mapping UI, relevance tuning, schema migration UX, alias-based zero-downtime reindex, index history | Medium |
 | **P8 — Multisite and multilingual** | Networks and non-English sites | Network configuration, per-site scope UI, language fields and analyzers, WPML and Polylang integration | Medium |
 | **P9 — Cloud backend** | A second adapter proves the abstraction | Cloud adapter, sign-up and key management, privacy disclosure, migration between backends | High — a product, not a feature |
 | **P10 — Commercial ecosystem** | Add-ons and analytics | Add-on SDK, analytics add-on, semantic search exploration | Deliberately unplanned |
@@ -2387,6 +2387,88 @@ Phase 5 built and added no faceting machinery of its own — except two things e
 now has: a combining mode, so a filter can mean "all of these" rather than "any of these", and an
 excluding filter, so a rule can narrow one kind of content without deleting every other kind from
 the results. Both were found by WooCommerce and both belong in the generic layer.
+
+### 25.8 Phase 7 status — complete, 2026-09-20, shipped as 0.8.0
+
+The phase where the two settings that decide what a site's search can find stop
+being the two settings with no interface. 353 unit tests pass, alongside coding
+standards, static analysis and the version check.
+
+| Deliverable | State |
+| --- | --- |
+| Field mapping UI | Done. `Admin\ContentScreen`: post types, the meta allowlist with discovery of the keys a site actually uses, and the index field name each type choice produces |
+| Relevance tuning | Done. `Admin\SearchScreen` over a new pure `Search\RelevanceSettings` |
+| Schema migration UX | Done. `Admin\ToolsScreen` shows the plan, the blockers and the export; `Schema\AppliedSchema` stores the three pieces of state §14.3 asks for |
+| Alias-based zero-downtime reindex | Done, in both strategies. New `Contracts\LifecycleBackend`, `Indexing\Rebuild`, and a channel on `FullSync` |
+| Index history | Done. Two pruned custom tables, per §17.5, with per-object failures |
+| Admin IA | Five screens: Connection, Dashboard, Content, Search, Tools. `Advanced` folded into the other two, as §17.1 anticipated |
+
+**A researched fact in §10.3 is incomplete, and it changes the design.** The
+plan says SolrCloud gets the alias strategy and user-managed gets the pointer
+strategy, chosen by *detected mode*. Mode is necessary and not sufficient: Solr
+refuses `CREATEALIAS` when the name is already held by a real collection, which
+is the case on every site that has not deliberately set an alias up. Choosing the
+strategy from mode alone would produce a rebuild that succeeds all the way to the
+switch and then fails at it, with a freshly built index nobody is reading. So the
+backend reports `rebuild_style()` from what the server actually has — it resolves
+the configured name and only claims the alias strategy when that name really is
+an alias — and a SolrCloud site without one gets the pointer strategy, which
+works. Recorded as a Phase 7 addendum to ADR-003.
+
+**The plan says delete the old collection after a grace period. This does not.**
+"After a grace period" means a plugin deleting a customer's index on a timer, and
+the only reason the previous index exists is to be the way back when something
+turns out to be wrong two days later. It is offered as a button and a CLI
+command, never taken automatically. The same reasoning already governs schema
+fields in §14.3, where removal "is not worth the risk".
+
+**Verification is a step, not a formality.** A rebuild that finished is not the
+same claim as a rebuild that is correct. `switch_over()` refuses any state but
+`ready`, and `ready` is only reached by comparing the replacement's document
+count against `Reconciler::expected_count()`. There is no flag to skip it:
+switching an unverified index is the single failure mode the whole mechanism
+exists to prevent.
+
+**Four defects found and fixed, three of them in earlier phases.**
+
+1. `Reconciler::expected_count()` read `index.post_types` directly rather than
+   through `IndexedTypes`. This is the third instance of the split Phase 6 fixed
+   twice — and the worst, because on any WooCommerce site the expected count
+   excludes products while the actual count includes them, so the index is
+   reported as out of step permanently and the warning trains people to ignore
+   it. Found by needing the same count for rebuild verification.
+2. `RelevanceProfile::from_config()` merged integration boosts *over* the stored
+   profile, so a store that turned its SKU weighting down had it put back on
+   every request and the setting appeared to do nothing. Only visible once there
+   was a screen to change it from. Integration defaults now fill gaps and never
+   overrule a decision; a boost of zero survives the merge as a decision rather
+   than looking like a field nobody mentioned.
+3. A full sync never committed when it finished. §10.4 calls for "one explicit
+   hard commit" at the end and Phase 2 did not build it, so the last batch could
+   stay invisible for up to a minute — long enough for the reconciliation pass
+   that follows to count it as missing. `IndexBackend::commit()` is new, and it
+   is the only place an explicit commit is ever issued.
+4. Nothing recorded that a setting had changed which existing documents do not
+   reflect. Adding a meta key or applying a schema change alters what a document
+   *should* contain and alters nothing already indexed — Solr never rewrites a
+   document because a schema changed. `Indexing\ReindexNotice` records the gap
+   and the screens show it, rather than letting the setting look as though it
+   took effect.
+
+**One piece of repetition was kept on purpose.** `Admin\Screen` holds the
+capability check, the redirect-with-notice and the form helpers, but each handler
+writes its own `check_admin_referer()`. WPCS cannot follow a nonce check into a
+parent class — it explicitly skips method calls — and rather than tell the
+ruleset to trust a method, the check now sits where a reviewer greps for it. The
+sniff was right: shared, it is invisible, and a handler that omits it looks
+identical to one that has it. Each handler also reads `$_POST` exactly once,
+immediately after that check, and passes the array down; nothing below touches a
+superglobal.
+
+**`docs/schema.md` was written here, not in P1 as §24.1 says.** It was the one
+document in the table that had never been written, and the reason is visible in
+hindsight: until there was a migration UX there was nothing to describe beyond
+the contract itself, which `docs/architecture.md` already covered.
 
 ---
 

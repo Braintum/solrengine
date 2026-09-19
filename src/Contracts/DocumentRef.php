@@ -60,6 +60,36 @@ final class DocumentRef {
 	}
 
 	/**
+	 * Rebuild a reference from a document ID.
+	 *
+	 * The inverse of document_id(). Needed because a failure is reported by the
+	 * backend against a document ID, and a human looking at a list of failures
+	 * wants a post to open rather than a string to decode.
+	 *
+	 * Returns null for anything that is not one of our IDs, including an ID
+	 * from a future format. A malformed record in a log is a row to skip, not
+	 * an error to raise.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @param string $id Document ID.
+	 * @return self|null
+	 */
+	public static function from_document_id( string $id ): ?self {
+		$parts = explode( ':', $id );
+
+		if ( 4 !== count( $parts ) || 'se' !== $parts[0] ) {
+			return null;
+		}
+
+		if ( '' === $parts[2] || ! ctype_digit( $parts[1] ) || ! ctype_digit( $parts[3] ) ) {
+			return null;
+		}
+
+		return new self( (int) $parts[1], $parts[2], (int) $parts[3] );
+	}
+
+	/**
 	 * Site identifier.
 	 *
 	 * @since 0.1.0
