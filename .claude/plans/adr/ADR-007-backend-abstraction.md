@@ -76,3 +76,74 @@ The seam is the most valuable structural asset in the product and it is nearly f
 If the Cloud API ever needs a field the domain model lacks, that is a signal the abstraction is
 leaking and should be fixed in the domain rather than patched in the adapter — a rule that keeps
 the boundary honest over years rather than months.
+
+## Addendum, 2026-09-20 — Phase 9 tested the seam, and found one leak
+
+**Status:** the decision held. Splitting `SearchBackend` from `IndexBackend`
+turned out to be load-bearing for a reason this ADR only mentions in passing, and
+one contract was one adapter wide.
+
+### The leak: `FilterRegistry` produced Solr syntax
+
+This ADR's own rule is that a gap in the abstraction "is a signal the abstraction
+is leaking and should be fixed in the domain rather than patched in the adapter".
+Writing a second adapter found one immediately.
+
+`FilterRegistry` does two separable things: it decides that the public key
+`category` means the field `se_ss_taxpath_category` holding strings, and it
+renders that into `se_ss_taxpath_category:(...)`. The first is a domain fact
+every backend needs; the second is Solr's dialect. Only the second was exposed —
+`clause_for()` returned a Solr clause and there was no way to ask what a key
+meant — so a backend that does not speak Solr could not resolve a filter at all.
+
+Fixed in the domain, per the rule: `definition_of()` exposes the mapping, and
+`clause_for()` keeps the rendering for the adapter that wants it. No adapter was
+patched.
+
+This is the kind of leak that is invisible with one implementation. It had been
+there since Phase 5 and nothing could have detected it except trying to write
+something that was not Solr.
+
+### The second adapter is real, because an imaginary one proves nothing
+
+§21.4 is explicit that the Cloud implementation is deliberately undecided, and
+§22.4 says to prove demand before building any of it. An HTTP client for a
+service with no API, no pricing and two blocking open questions (Q8, Q9) would be
+dead code that cannot be run — and code that cannot be run cannot be wrong, which
+is the opposite of proof.
+
+So the second adapter is `Backend\Memory\MemoryBackend`: an in-memory
+implementation of all four contracts, held to the same rules by
+`BackendConformanceTest`. It answers every question the WordPress layer asks from
+the domain model alone. If a future change cannot be satisfied without Solr
+vocabulary, it stops compiling.
+
+It pays for itself three ways beyond the proof: the contracts' prose rules are
+now failing tests rather than docblocks; the WordPress side can be developed with
+no Solr running; and it is the first implementation to report
+`is_manageable()` as false.
+
+### `is_manageable()` had no caller
+
+§14.4 says "the Cloud adapter simply reports managed and the UI adapts". The
+contract method existed from Phase 1, the Solr adapter implemented it, and
+**nothing ever called it** — so the managed-backend path was prose. The Tools
+screen and the CLI now honour it, which took four lines and would have taken the
+same four lines in Phase 1 if anything had been able to exercise them.
+
+The general lesson, worth stating because it will recur: a contract method with
+no caller and one implementor is not an abstraction, it is a comment with a type
+signature.
+
+### Migration between backends is what the split was for
+
+This ADR justifies splitting search from indexing mostly on testability. The
+larger payoff, named in §21.1 and built here, is that a site can index into one
+backend while another keeps answering visitors — so moving between backends never
+serves from a half-built index. It is the Phase 7 rebuild one level up, and it
+cost a config key and an accessor because the split already existed.
+
+One consequence had to be corrected while building it: `BackendRegistry::schema()`
+resolved through the *search* factory. During a migration that is the backend no
+longer being written to, so it would have prepared the old backend's schema for
+content it was not receiving. Schema follows the index side.

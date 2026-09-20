@@ -144,6 +144,23 @@ final class DashboardScreen {
 						null === $index ? 'bad' : 'good'
 					);
 
+					if ( $backends->is_migrating() ) {
+						// Named rather than implied. A site indexing into one
+						// backend and searching another is a deliberate,
+						// temporary state, and one nobody should be able to
+						// forget they left it in.
+						$this->row(
+							__( 'Migration', 'solrengine' ),
+							sprintf(
+								/* translators: 1: backend being filled, 2: backend answering searches. */
+								__( 'In progress. Indexing into %1$s, searches still answered by %2$s. Finish with "wp solrengine backends finish" once it is full.', 'solrengine' ),
+								$backends->selected_id(),
+								$backends->search_id()
+							),
+							'warn'
+						);
+					}
+
 					$this->row(
 						__( 'Documents', 'solrengine' ),
 						null === $documents

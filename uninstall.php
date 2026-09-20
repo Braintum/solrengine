@@ -59,6 +59,24 @@ function solrengine_uninstall_site() {
 	delete_option( 'solrengine_solr_endpoint' );
 	delete_option( 'solrengine_commit_on_update' );
 
+	/*
+	 * Per-backend credentials. Their option names carry the backend identifier,
+	 * and a backend registered by an add-on that has since been removed cannot
+	 * be enumerated — so they are matched by prefix. The prefix is a literal
+	 * this file owns, not anything from a request.
+	 */
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+	$solrengine_credential_options = $wpdb->get_col(
+		$wpdb->prepare(
+			"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+			$wpdb->esc_like( 'solrengine_credentials_' ) . '%'
+		)
+	);
+
+	foreach ( (array) $solrengine_credential_options as $solrengine_credential_option ) {
+		delete_option( $solrengine_credential_option );
+	}
+
 	$tables = array(
 		$wpdb->prefix . 'solrengine_index_runs',
 		$wpdb->prefix . 'solrengine_failures',

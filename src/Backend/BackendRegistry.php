@@ -140,6 +140,45 @@ final class BackendRegistry {
 	}
 
 	/**
+	 * The backend answering searches, which is usually the selected one.
+	 *
+	 * Usually, not always. Splitting search from indexing is Principle 2 made
+	 * concrete, and §21.1 names the payoff: "a site can index to one backend
+	 * while searching another during a migration". That is the entire migration
+	 * mechanism — fill the new backend while the old one keeps answering
+	 * visitors, then move one setting.
+	 *
+	 * Without it, moving between backends means a window in which the new index
+	 * is half full and serving, which is the same failure a reindex in place has
+	 * and which Phase 7 built a whole rebuild mechanism to avoid. This is that
+	 * idea one level up.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @return string
+	 */
+	public function search_id(): string {
+		$override = $this->config->get_string( 'connection.search_backend', '' );
+
+		if ( '' !== $override && $this->has( $override ) ) {
+			return $override;
+		}
+
+		return $this->selected_id();
+	}
+
+	/**
+	 * Whether this site is indexing into one backend and searching another.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @return bool
+	 */
+	public function is_migrating(): bool {
+		return $this->search_id() !== $this->selected_id();
+	}
+
+	/**
 	 * The selected search backend, or null when none is available.
 	 *
 	 * @since 0.1.0
@@ -147,7 +186,7 @@ final class BackendRegistry {
 	 * @return SearchBackend|null
 	 */
 	public function search(): ?SearchBackend {
-		$id = $this->selected_id();
+		$id = $this->search_id();
 
 		if ( '' === $id ) {
 			return null;
@@ -191,13 +230,17 @@ final class BackendRegistry {
 	 * @return SchemaBackend|null
 	 */
 	public function schema(): ?SchemaBackend {
+		// Follows the *index* backend, not the search one. A schema is applied
+		// where documents are written, and during a migration those are two
+		// different places — preparing the old backend's schema for content it
+		// is no longer receiving would be exactly backwards.
 		$id = $this->selected_id();
 
 		if ( '' === $id ) {
 			return null;
 		}
 
-		$instance = $this->resolve( 'search', $id, $this->search_factories );
+		$instance = $this->resolve( 'index', $id, $this->index_factories );
 
 		return $instance instanceof SchemaBackend ? $instance : null;
 	}

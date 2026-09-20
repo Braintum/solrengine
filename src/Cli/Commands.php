@@ -242,6 +242,15 @@ final class Commands {
 			return;
 		}
 
+		if ( ! $backend->is_manageable() ) {
+			// A managed backend owns its own schema. Distinguished from the case
+			// above because the answer is different: there is nothing to apply
+			// by hand either, and nothing the operator needs to do.
+			WP_CLI::success( 'This backend manages its own schema. There is nothing to check or apply.' );
+
+			return;
+		}
+
 		$planned = $backend->plan( $this->contracts->current() );
 
 		if ( $planned->is_failure() ) {
@@ -999,5 +1008,195 @@ final class Commands {
 		);
 
 		return is_array( $sites ) ? array_values( $sites ) : array();
+	}
+
+	/**
+	 * Move this site from one search backend to another.
+	 *
+	 * A migration in three moves, with visitors served throughout. Indexing is
+	 * pointed at the new backend while the old one keeps answering searches; the
+	 * new index fills; and only then does anything visitors can see change.
+	 *
+	 * That split is Principle 2 made concrete — §21.1 names it as the payoff for
+	 * keeping SearchBackend and IndexBackend separate — and it is the same idea
+	 * as the Phase 7 rebuild, one level up: never serve from a half-built index.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <action>
+	 * : What to do.
+	 * ---
+	 * options:
+	 *   - status
+	 *   - start
+	 *   - finish
+	 *   - abort
+	 * ---
+	 *
+	 * [--to=<backend>]
+	 * : The backend to migrate to, for start.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp solrengine backends status
+	 *     wp solrengine backends start --to=memory
+	 *     wp solrengine index
+	 *     wp solrengine backends finish
+	 *
+	 * @since 0.10.0
+	 *
+	 * @param array<int,string>    $args       Positional arguments.
+	 * @param array<string,string> $assoc_args Flags.
+	 * @return void
+	 */
+	public function backends( array $args, array $assoc_args ): void {
+		$config = $this->container->get( 'config' );
+		$action = isset( $args[0] ) ? (string) $args[0] : 'status';
+
+		switch ( $action ) {
+			case 'start':
+				$target = isset( $assoc_args['to'] ) ? (string) $assoc_args['to'] : '';
+
+				if ( ! $this->backends->has( $target ) ) {
+					WP_CLI::error(
+						sprintf(
+							'No backend called "%s". Registered: %s.',
+							$target,
+							implode( ', ', array_keys( $this->backends->available() ) )
+						)
+					);
+				}
+
+				if ( $target === $this->backends->selected_id() ) {
+					WP_CLI::error( 'That is already the backend this site indexes into.' );
+				}
+
+				// Searches stay where they are; indexing moves. Recorded in this
+				// order so that no request can observe the new backend serving
+				// before it has been written to.
+				$config->set( 'connection.search_backend', $this->backends->selected_id() );
+				$config->set( 'connection.backend', $target );
+
+				WP_CLI::success(
+					sprintf(
+						'Indexing now writes to "%s"; searches are still answered by "%s". Run "wp solrengine index", then "wp solrengine backends finish".',
+						$target,
+						$this->backends->search_id()
+					)
+				);
+
+				return;
+
+			case 'finish':
+				if ( ! $this->backends->is_migrating() ) {
+					WP_CLI::error( 'No migration is in progress.' );
+				}
+
+				$this->finish_migration( $config );
+
+				return;
+
+			case 'abort':
+				if ( ! $this->backends->is_migrating() ) {
+					WP_CLI::error( 'No migration is in progress.' );
+				}
+
+				// Indexing goes back to where searches never left. Whatever was
+				// written to the other backend stays there; SolrEngine does not
+				// delete an index it was told to fill.
+				$config->set( 'connection.backend', $this->backends->search_id() );
+				$config->set( 'connection.search_backend', '' );
+
+				WP_CLI::success( 'Migration abandoned. Nothing was deleted from the backend you were moving to.' );
+
+				return;
+
+			default:
+				$this->backend_status();
+		}
+	}
+
+	/**
+	 * Switch searches to the backend that has been filling.
+	 *
+	 * Verified before switching, by the same rule the rebuild uses: a run that
+	 * finished is not the same claim as an index that is correct.
+	 *
+	 * @param \SolrEngine\Support\Config $config Configuration.
+	 * @return void
+	 */
+	private function finish_migration( $config ): void {
+		$index = $this->backends->index();
+
+		if ( null === $index ) {
+			WP_CLI::error( 'The backend you are migrating to is not reachable.' );
+		}
+
+		$status = $index->status();
+
+		if ( $status->is_failure() ) {
+			WP_CLI::error( sprintf( 'The new backend could not be asked how full it is: %s', $status->message() ) );
+		}
+
+		$reconciler = $this->container->get( 'indexing.reconciler' );
+		$expected   = $reconciler instanceof \SolrEngine\Indexing\Reconciler ? $reconciler->expected_count() : 0;
+		$actual     = $status->value()->document_count();
+
+		if ( $expected > 0 && $actual < (int) floor( $expected * 0.98 ) ) {
+			WP_CLI::error(
+				sprintf(
+					'The new backend holds %s documents and should hold about %s. Index it fully before finishing, or run "wp solrengine backends abort".',
+					number_format_i18n( $actual ),
+					number_format_i18n( $expected )
+				)
+			);
+		}
+
+		$config->set( 'connection.search_backend', '' );
+
+		WP_CLI::success(
+			sprintf( 'Searches are now answered by "%s". The previous backend still holds its documents.', $this->backends->selected_id() )
+		);
+	}
+
+	/**
+	 * Print which backend does what.
+	 *
+	 * @return void
+	 */
+	private function backend_status(): void {
+		$rows = array();
+
+		foreach ( $this->backends->available() as $id => $label ) {
+			$id = (string) $id;
+
+			$roles = array();
+
+			if ( $id === $this->backends->selected_id() ) {
+				$roles[] = 'indexing';
+			}
+
+			if ( $id === $this->backends->search_id() ) {
+				$roles[] = 'searching';
+			}
+
+			$rows[] = array(
+				'id'    => $id,
+				'name'  => (string) $label,
+				'doing' => array() === $roles ? '-' : implode( ', ', $roles ),
+			);
+		}
+
+		WP_CLI\Utils\format_items( 'table', $rows, array( 'id', 'name', 'doing' ) );
+
+		if ( $this->backends->is_migrating() ) {
+			WP_CLI::log(
+				sprintf(
+					'A migration is in progress: indexing into "%s", searching "%s".',
+					$this->backends->selected_id(),
+					$this->backends->search_id()
+				)
+			);
+		}
 	}
 }

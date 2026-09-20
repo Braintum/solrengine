@@ -4,7 +4,7 @@ Tags: search, solr, relevance, faceted search, woocommerce
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.9.0
+Stable tag: 0.10.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -192,6 +192,19 @@ that is answering searches, check it against what WordPress holds, and switch
 over only then. Your previous index is kept afterwards, and SolrEngine never
 deletes it for you — it is the way back if something turns out to be wrong.
 
+= Can I move to a different search backend without breaking search? =
+
+Yes. SolrEngine indexes into the new backend while the old one keeps answering
+visitors, and moves searches over only once the new index is full. Run
+`wp solrengine backends start --to=<backend>`, then a full index, then
+`wp solrengine backends finish`.
+
+= What does SolrEngine send, and where? =
+
+To your Solr server: your indexed content, and what visitors search for. Nowhere
+else — no analytics, no telemetry, no licence checks. Search queries are not
+logged. See docs/privacy.md for the full list, including what is never indexed.
+
 = Something is missing from search. How do I find out why? =
 
 SolrEngine → Tools keeps the last fifty indexing runs and the posts that failed
@@ -199,6 +212,26 @@ inside each one, with a link to each. `wp solrengine history --failures` shows
 the same list.
 
 == Changelog ==
+
+= 0.10.0 =
+* SolrEngine can now use more than one kind of search backend, chosen from a
+  dropdown on the connection screen when more than one is available. Each
+  backend keeps its own credentials, so switching back does not mean typing
+  them again.
+* Move between backends without search going wrong while you do: indexing is
+  pointed at the new one while the old one keeps answering visitors, and
+  searches only move once the new index is full. "wp solrengine backends".
+* A backend that manages its own schema is now recognised as such, and the
+  schema screens say there is nothing to do rather than offering changes that
+  cannot be applied.
+* A new in-memory backend for development, so the WordPress side can be worked
+  on without a Solr running. Enabled with SOLRENGINE_MEMORY_BACKEND in
+  wp-config.php, and not for production use.
+* A privacy document, docs/privacy.md, covering exactly what is indexed, what
+  is sent where, and what is never touched.
+* Fixed: a search query's cache key was built from a hand-written list of
+  properties, so a property added later could have made two different searches
+  share one cached result.
 
 = 0.9.0 =
 * Multilingual sites. SolrEngine reads languages from WPML or Polylang, records
@@ -376,6 +409,10 @@ the same list.
 * Coding standards, static analysis and test tooling.
 
 == Upgrade Notice ==
+
+= 0.10.0 =
+No action needed. Adds backend selection and a safe path for moving between
+backends.
 
 = 0.9.0 =
 Adds multilingual and multisite support. On a multilingual site, run a full

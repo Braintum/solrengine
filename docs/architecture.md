@@ -45,7 +45,9 @@ src/Support/
   Credentials                Constants first, encrypted option second
   Encryption                 Sodium, keyed from the site salts
   NullLogger / DebugLogger
-src/Backend/BackendRegistry  Which backends exist, which is selected
+src/Backend/BackendRegistry  Which backends exist, which indexes, which searches
+src/Backend/Memory/          A second adapter. Proves the contracts are
+                             satisfiable without Solr; development only
 src/Language/                Language tags, and the site's languages
 src/Multisite/               Network configuration and this site's scope
 ```

@@ -144,6 +144,25 @@ meta key must already be on the indexing allowlist.
 To let visitors *browse* by that filter rather than only request it, register a
 facet with the same key as well. See [facets.md](facets.md).
 
+## Changing backend
+
+SolrEngine can use more than one search backend, chosen on the connection screen
+when more than one is registered.
+
+Moving between two is done without taking search down, using the same principle
+as the index rebuild: fill the new one while the old one still answers visitors.
+
+```bash
+wp solrengine backends status
+wp solrengine backends start --to=<backend>
+wp solrengine index
+wp solrengine backends finish
+```
+
+`finish` refuses while the new backend holds noticeably fewer documents than
+WordPress says it should. `abort` puts indexing back where searches never left,
+and deletes nothing.
+
 ## Caching
 
 Results are cached for anonymous visitors only. A logged-in user may be able to

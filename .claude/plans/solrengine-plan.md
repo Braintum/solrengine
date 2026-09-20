@@ -1970,7 +1970,7 @@ Each phase ends in something demonstrable. No phase is "refactoring".
 | **P6 — WooCommerce** ✅ | Fast product search and catalogue filtering | Product and variation mapping, visibility rules, price and attribute facets, Product Collection block integration, classic shop loop integration | **High — §15.4, §15.6** |
 | **P7 — Advanced administration** ✅ | Power users stop needing the filesystem | Field mapping UI, relevance tuning, schema migration UX, alias-based zero-downtime reindex, index history | Medium |
 | **P8 — Multisite and multilingual** ✅ | Networks and non-English sites | Network configuration, per-site scope UI, language fields and analyzers, WPML and Polylang integration | Medium |
-| **P9 — Cloud backend** | A second adapter proves the abstraction | Cloud adapter, sign-up and key management, privacy disclosure, migration between backends | High — a product, not a feature |
+| **P9 — Backend abstraction proven** ◐ | A second adapter proves the abstraction | Second adapter, conformance suite, backend selection, per-backend credentials, privacy disclosure, migration between backends. **Cloud itself deferred — see §25.10** | High — a product, not a feature |
 | **P10 — Commercial ecosystem** | Add-ons and analytics | Add-on SDK, analytics add-on, semantic search exploration | Deliberately unplanned |
 
 ### 25.1 Phase 0 status — complete, 2026-09-19
@@ -2537,6 +2537,76 @@ what it would take.
 either phase existed and folds both into "everyone"; in practice each has one
 audience — a site owner with translations, and a network administrator — and a
 document serving two serves neither.
+
+### 25.10 Phase 9 status — partially complete, 2026-09-20, shipped as 0.10.0
+
+**The phase as written could not be built, and the plan says so in three places.**
+The roadmap row asks for a Cloud adapter; §21.4 states that "the Cloud
+implementation, its pricing, its infrastructure and its analytics feature set are
+deliberately undecided"; §22.4 says to "prove demand with the free plugin and
+self-hosted users before building any of it, and treat the Cloud phase as a
+separate product decision"; and §29 lists Q8 and Q9 as *blocking* for P9 and
+still open. There is no API to write a client against, no region list, no
+retention period and no sub-processor list.
+
+So no Cloud adapter was written. An HTTP client for a service that does not exist
+cannot be run, and code that cannot be run cannot be wrong — which is the
+opposite of proving an abstraction. A "SolrEngine Cloud" entry in a dropdown
+leading nowhere would be worse than its absence.
+
+Everything else in the row was built, and the phase's stated *outcome* — that a
+second adapter proves the abstraction — was met with a second adapter that is
+real.
+
+| Deliverable | State |
+| --- | --- |
+| Second adapter | Done. `Backend\Memory\MemoryBackend`, all four contracts, no Solr vocabulary |
+| Conformance suite | Done. `BackendConformanceTest` turns the contracts' prose rules into failing tests, with no server needed |
+| Backend selection | Done. A chooser on the connection screen, shown only when there is a choice |
+| Key management | Done. Credentials are namespaced per backend; the first keeps its existing option so upgrades find it |
+| Migration between backends | Done. `wp solrengine backends`, indexing into one while the other still answers visitors |
+| Privacy disclosure | Done. `docs/privacy.md`, the P1 document §24.1 lists and nobody had written |
+| Serialisable domain model | Done. `SearchQuery::to_array()`/`from_array()`, the third property §21.4 requires |
+| Cloud adapter, sign-up | **Not built.** Blocked on Q8 and Q9, and forbidden by §21.4 |
+
+**Writing a second adapter found a leak within an hour, which is the argument for
+writing one.** `FilterRegistry` exposed only `clause_for()`, which returns Solr
+query syntax, and no way to ask what a filter key maps to — so a backend that
+does not speak Solr could not resolve a filter at all. ADR-007's own rule is that
+such a gap is "a signal the abstraction is leaking and should be fixed in the
+domain rather than patched in the adapter", and it was: `definition_of()` exposes
+the mapping, `clause_for()` keeps the rendering. The leak had been there since
+Phase 5 and nothing could have found it except trying to write something that was
+not Solr.
+
+**`is_manageable()` had no caller.** §14.4 says "the Cloud adapter simply reports
+managed and the UI adapts". The method has existed since Phase 1 and nothing ever
+invoked it, so the managed-backend path was prose with a type signature. The
+Tools screen and the CLI now honour it — four lines, which would have been the
+same four lines in Phase 1 had anything been able to exercise them. Recorded in
+ADR-007 as a general lesson: a contract method with one implementor and no caller
+is not an abstraction.
+
+**One defect fixed.** `SearchQuery::cache_key()` was built from a hand-written
+list of twelve properties, separate from the properties themselves. A property
+added without remembering the list means two queries that differ only in it share
+a cache entry, and one visitor is served another's results — a defect with no
+symptom until it has one. The key is now derived from `to_array()`, so the two
+cannot drift.
+
+**One correction made while building the migration.**
+`BackendRegistry::schema()` resolved through the *search* factory. With one
+backend that is invisible; during a migration it is the backend no longer being
+written to, so SolrEngine would have prepared the old backend's schema for
+content it was not receiving. Schema follows the index side.
+
+**What P9 still needs, when the business case exists.** A Cloud adapter is now a
+small piece of work rather than a large one: the contracts exist, the domain
+model serialises, the registry selects, credentials are per-backend, the UI adapts
+to a managed schema, and there is a conformance suite waiting for it. What remains
+is not plugin work — it is Q8, Q9, a running service, and the disclosure
+obligations §21.3 lists, which `docs/privacy.md` now records in advance so they
+are not decided under pressure.
 
 ---
 

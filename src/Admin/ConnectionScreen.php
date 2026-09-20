@@ -7,6 +7,7 @@
 
 namespace SolrEngine\Admin;
 
+use SolrEngine\Backend\BackendRegistry;
 use SolrEngine\Diagnostics\ConnectionDiagnostic;
 use SolrEngine\Diagnostics\DiagnosticReport;
 use SolrEngine\Integration\WooCommerce\WooCommerce;
@@ -78,23 +79,33 @@ final class ConnectionScreen extends Screen {
 	private $scope;
 
 	/**
+	 * Registered backends.
+	 *
+	 * @var BackendRegistry|null
+	 */
+	private $backends;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Config               $config      Configuration.
 	 * @param Credentials          $credentials Credential store.
 	 * @param ConnectionDiagnostic $diagnostic  Connection diagnostic.
 	 * @param SiteScope|null       $scope       This site's place in a network.
+	 * @param BackendRegistry|null $backends    Registered backends.
 	 */
 	public function __construct(
 		Config $config,
 		Credentials $credentials,
 		ConnectionDiagnostic $diagnostic,
-		?SiteScope $scope = null
+		?SiteScope $scope = null,
+		?BackendRegistry $backends = null
 	) {
 		$this->config      = $config;
 		$this->credentials = $credentials;
 		$this->diagnostic  = $diagnostic;
 		$this->scope       = $scope;
+		$this->backends    = $backends;
 	}
 
 	/**
@@ -182,6 +193,10 @@ final class ConnectionScreen extends Screen {
 
 		$this->config->set( 'connection.allow_private_ip', $private );
 		$this->config->set( 'connection.verify_tls', $verify_tls );
+		$this->save_backend_choice(
+			isset( $_POST['backend'] ) ? sanitize_key( wp_unslash( $_POST['backend'] ) ) : ''
+		);
+
 		$this->config->set( 'search.enabled', ! empty( $_POST['search_enabled'] ) );
 		$this->config->set( 'search.instant_enabled', ! empty( $_POST['instant_enabled'] ) );
 		$this->config->set( 'search.shop_enabled', ! empty( $_POST['shop_enabled'] ) );
@@ -244,6 +259,8 @@ final class ConnectionScreen extends Screen {
 			?>
 
 			<h2><?php esc_html_e( 'Connection', 'solrengine' ); ?></h2>
+
+			<?php $this->render_backend_choice(); ?>
 
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="solrengine_save_connection"/>
@@ -475,6 +492,78 @@ final class ConnectionScreen extends Screen {
 			<?php endif; ?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Render the backend chooser, when there is a choice to make.
+	 *
+	 * Absent when one backend is registered, which is every ordinary install. A
+	 * dropdown offering one option is a question with one answer.
+	 *
+	 * The chooser exists at all because ADR-010 turns on it: SolrEngine Cloud, if
+	 * it is ever built, is "a backend choice, not a paywall", and the difference
+	 * between an interface to a paid service and locked functionality is whether
+	 * the alternative sits in a dropdown beside it or behind an upgrade badge.
+	 * An add-on registering its own backend lands here too, with no code change.
+	 *
+	 * @return void
+	 */
+	private function render_backend_choice(): void {
+		if ( null === $this->backends ) {
+			return;
+		}
+
+		$available = $this->backends->available();
+
+		if ( count( $available ) < 2 ) {
+			return;
+		}
+
+		$selected = $this->backends->selected_id();
+
+		?>
+		<table class="form-table" role="presentation">
+			<tr>
+				<th scope="row">
+					<label for="solrengine-backend"><?php esc_html_e( 'Search backend', 'solrengine' ); ?></label>
+				</th>
+				<td>
+					<select id="solrengine-backend" name="backend" <?php disabled( $this->config->is_locked( 'connection.backend' ) ); ?>>
+						<?php foreach ( $available as $id => $label ) : ?>
+							<option value="<?php echo esc_attr( (string) $id ); ?>" <?php selected( $selected, (string) $id ); ?>>
+								<?php echo esc_html( (string) $label ); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+					<p class="description">
+						<?php esc_html_e( 'Which search engine answers this site. Each backend keeps its own credentials, so switching back does not mean typing them again.', 'solrengine' ); ?>
+						<?php $this->render_lock_note( 'connection.backend' ); ?>
+					</p>
+				</td>
+			</tr>
+		</table>
+		<?php
+	}
+
+	/**
+	 * Store the chosen backend, if one was submitted and is real.
+	 *
+	 * A name that is not registered is discarded rather than stored. Storing it
+	 * would leave the site pointed at a backend that does not exist, and the
+	 * registry would quietly fall back to another one — which is worse than
+	 * refusing, because the screen would then disagree with what is running.
+	 *
+	 * @param string $chosen Backend identifier submitted, or an empty string.
+	 * @return void
+	 */
+	private function save_backend_choice( string $chosen ): void {
+		if ( null === $this->backends || '' === $chosen ) {
+			return;
+		}
+
+		if ( $this->backends->has( $chosen ) ) {
+			$this->config->set( 'connection.backend', $chosen );
+		}
 	}
 
 	/**

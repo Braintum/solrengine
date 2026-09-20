@@ -65,12 +65,49 @@ final class Credentials {
 	private $encryption;
 
 	/**
+	 * Which backend these credentials belong to.
+	 *
+	 * @var string
+	 */
+	private $backend;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Encryption $encryption Encryption service.
+	 * @param string     $backend    Backend identifier the credentials are for.
 	 */
-	public function __construct( Encryption $encryption ) {
+	public function __construct( Encryption $encryption, string $backend = 'solr' ) {
 		$this->encryption = $encryption;
+		$this->backend    = '' !== $backend ? $backend : 'solr';
+	}
+
+	/**
+	 * The same store, for a different backend.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @param string $backend Backend identifier.
+	 * @return self
+	 */
+	public function for_backend( string $backend ): self {
+		return new self( $this->encryption, $backend );
+	}
+
+	/**
+	 * The option this backend's credentials live in.
+	 *
+	 * The first backend keeps the unprefixed name it has always used, so an
+	 * existing site's stored password is still found after an upgrade. Every
+	 * other backend gets its own, which is the point: with two backends
+	 * registered, one shared store hands a Solr password to whatever else the
+	 * site is pointed at, and an API key to Solr.
+	 *
+	 * @param string $base Base option name.
+	 * @return string
+	 */
+	private function option_for( string $base ): string {
+		return 'solr' === $this->backend ? $base : $base . '_' . $this->backend;
 	}
 
 	/**
@@ -199,7 +236,7 @@ final class Credentials {
 		}
 
 		if ( '' === $password ) {
-			delete_option( self::OPTION );
+			delete_option( $this->option_for( self::OPTION ) );
 
 			return Result::success();
 		}
@@ -218,7 +255,7 @@ final class Credentials {
 		}
 
 		$saved = update_option(
-			self::OPTION,
+			$this->option_for( self::OPTION ),
 			array(
 				'username' => $username,
 				'password' => $encrypted->value( '' ),
@@ -259,7 +296,7 @@ final class Credentials {
 		}
 
 		if ( '' === $password ) {
-			delete_site_option( self::NETWORK_OPTION );
+			delete_site_option( $this->option_for( self::NETWORK_OPTION ) );
 
 			return Result::success();
 		}
@@ -278,7 +315,7 @@ final class Credentials {
 		}
 
 		$saved = update_site_option(
-			self::NETWORK_OPTION,
+			$this->option_for( self::NETWORK_OPTION ),
 			array(
 				'username' => $username,
 				'password' => $encrypted->value( '' ),
@@ -313,7 +350,7 @@ final class Credentials {
 	 * @return void
 	 */
 	public function forget(): void {
-		delete_option( self::OPTION );
+		delete_option( $this->option_for( self::OPTION ) );
 	}
 
 	/**
@@ -323,9 +360,11 @@ final class Credentials {
 	 * @return array<string,mixed>
 	 */
 	private function stored( string $option ): array {
+		$name = $this->option_for( $option );
+
 		$value = self::NETWORK_OPTION === $option
-			? ( is_multisite() ? get_site_option( $option, array() ) : array() )
-			: get_option( $option, array() );
+			? ( is_multisite() ? get_site_option( $name, array() ) : array() )
+			: get_option( $name, array() );
 
 		return is_array( $value ) ? $value : array();
 	}

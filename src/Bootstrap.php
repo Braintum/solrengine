@@ -16,6 +16,7 @@ use SolrEngine\Admin\ToolsScreen;
 use SolrEngine\Backend\BackendRegistry;
 use SolrEngine\Backend\Solr\EndpointValidator;
 use SolrEngine\Backend\Solr\HttpTransport;
+use SolrEngine\Backend\Memory\MemoryBackend;
 use SolrEngine\Backend\Solr\SolrBackend;
 use SolrEngine\Contracts\IndexBackend;
 use SolrEngine\Cli\Commands;
@@ -246,7 +247,14 @@ final class Bootstrap {
 		$container->share(
 			'credentials',
 			static function ( Container $c ): Credentials {
-				return new Credentials( $c->get( 'encryption' ) );
+				// Keyed to the configured backend, read from configuration
+				// rather than from the registry: backends register on init, and
+				// asking the registry before that would answer "none" and hand
+				// this site another backend's secret.
+				return new Credentials(
+					$c->get( 'encryption' ),
+					$c->get( 'config' )->get_string( 'connection.backend', 'solr' )
+				);
 			}
 		);
 
@@ -267,6 +275,19 @@ final class Bootstrap {
 			'backends',
 			static function ( Container $c ): BackendRegistry {
 				return new BackendRegistry( $c->get( 'config' ) );
+			}
+		);
+
+		$container->share(
+			'backend.memory',
+			static function ( Container $c ): MemoryBackend {
+				// Shared, not per-call. Search and indexing resolve separately
+				// through the registry, and two instances would mean documents
+				// written by one and searched for in the other.
+				return new MemoryBackend(
+					$c->get( 'search.filters' ),
+					$c->get( 'search.facets' )
+				);
 			}
 		);
 
@@ -640,6 +661,28 @@ final class Bootstrap {
 			$factory,
 			$factory
 		);
+
+		/*
+		 * The in-memory backend, behind a constant.
+		 *
+		 * It exists to prove the abstraction and to let the WordPress side be
+		 * developed without a Solr running, and it holds documents for exactly
+		 * one request — so a site that selected it would index everything and
+		 * find nothing on the next page load. Registered only where somebody has
+		 * asked for it in wp-config.php, which nobody does by accident.
+		 */
+		if ( defined( 'SOLRENGINE_MEMORY_BACKEND' ) && SOLRENGINE_MEMORY_BACKEND ) {
+			$memory = static function () use ( $container ): MemoryBackend {
+				return $container->get( 'backend.memory' );
+			};
+
+			$registry->register(
+				MemoryBackend::ID,
+				__( 'In-memory (development only)', 'solrengine' ),
+				$memory,
+				$memory
+			);
+		}
 	}
 
 	/**
@@ -795,7 +838,8 @@ final class Bootstrap {
 				$container->get( 'config' ),
 				$container->get( 'credentials' ),
 				$container->get( 'diagnostics.connection' ),
-				$container->get( 'site_scope' )
+				$container->get( 'site_scope' ),
+				$container->get( 'backends' )
 			);
 		};
 
@@ -971,6 +1015,7 @@ final class Bootstrap {
 		\WP_CLI::add_command( 'solrengine index', array( $commands, 'index' ) );
 		\WP_CLI::add_command( 'solrengine rebuild', array( $commands, 'rebuild' ) );
 		\WP_CLI::add_command( 'solrengine history', array( $commands, 'history' ) );
+		\WP_CLI::add_command( 'solrengine backends', array( $commands, 'backends' ) );
 
 		if ( is_multisite() ) {
 			\WP_CLI::add_command( 'solrengine network', array( $commands, 'network' ) );

@@ -301,6 +301,22 @@ final class ToolsScreen extends Screen {
 			return;
 		}
 
+		if ( ! $backend->is_manageable() ) {
+			// A managed backend owns its own schema, and §14.4 asks the UI to
+			// adapt to that rather than to the backend's name. Showing a plan
+			// that cannot be applied, or an export nobody can paste anywhere,
+			// would be offering work that does nothing.
+			//
+			// Until 0.10.0 nothing called this method, so the path existed only
+			// as prose in a contract. A second adapter is what made it real.
+			printf(
+				'<div class="notice notice-info inline"><p>%s</p></div>',
+				esc_html__( 'This backend manages its own schema. There is nothing to check or apply from here, and nothing you need to do.', 'solrengine' )
+			);
+
+			return;
+		}
+
 		$planned = $backend->plan( $contract );
 
 		if ( $planned->is_failure() ) {

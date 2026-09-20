@@ -117,6 +117,10 @@ final class Config {
 				'connection.allow_private_ip'   => false,
 				'connection.verify_tls'         => true,
 				'connection.backend'            => 'solr',
+				// Empty means "the same one". Set during a migration, when the
+				// new backend is being filled and the old one is still
+				// answering visitors. See BackendRegistry::search_id().
+				'connection.search_backend'     => '',
 				'connection.allowed_ports'      => array( 80, 443, 8443, 8983 ),
 
 				'index.batch_size'              => 100,

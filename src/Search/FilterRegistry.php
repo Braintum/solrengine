@@ -249,6 +249,28 @@ final class FilterRegistry {
 	}
 
 	/**
+	 * What a key maps to, as data rather than as a clause.
+	 *
+	 * The registry does two separable jobs and until 0.10.0 exposed only one of
+	 * them. Deciding that "category" means the field `se_ss_taxpath_category`
+	 * holding strings is a domain fact every backend needs; rendering that into
+	 * `se_ss_taxpath_category:(...)` is Solr's dialect and belongs to the Solr
+	 * adapter. With only clause_for() exposed, the two were welded together, and
+	 * a backend that does not speak Solr could not resolve a filter key at all —
+	 * which made the abstraction one adapter wide.
+	 *
+	 * Found by writing a second adapter, which is what a second adapter is for.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @param string $key Filter key.
+	 * @return array{field:string,type:string,label:string,gap:float,range:bool,exclude:bool}|null
+	 */
+	public function definition_of( string $key ): ?array {
+		return $this->filters[ $key ] ?? null;
+	}
+
+	/**
 	 * Build a filter query clause for a key and its values.
 	 *
 	 * Returns an empty string for an unregistered key or unusable values, and

@@ -480,35 +480,116 @@ final class SearchQuery {
 	 * @return string
 	 */
 	public function cache_key(): string {
-		$filters = $this->filters;
-		$facets  = $this->facets;
-		$modes   = $this->filter_modes;
+		// Derived from the serialised form rather than from a second hand-written
+		// list of properties. The two lists drifting apart is not a cosmetic bug:
+		// a property missing from the key means two queries that differ only in
+		// that property share a cache entry, and one visitor is served the other's
+		// results. Building the key from to_array() makes that impossible by
+		// construction rather than by remembering.
+		$state = $this->to_array();
 
-		ksort( $filters );
-		ksort( $facets );
-		ksort( $modes );
+		ksort( $state['filters'] );
+		ksort( $state['facets'] );
+		ksort( $state['filter_modes'] );
 
-		foreach ( $filters as $key => $values ) {
-			sort( $filters[ $key ] );
+		foreach ( $state['filters'] as $key => $values ) {
+			sort( $state['filters'][ $key ] );
 		}
 
-		return md5(
-			(string) wp_json_encode(
-				array(
-					$this->terms,
-					$this->site_id,
-					$this->post_types,
-					$filters,
-					$this->sort,
-					$this->page,
-					$this->per_page,
-					$this->language,
-					$this->highlight,
-					$facets,
-					$modes,
-					$this->documents,
-				)
-			)
+		return md5( (string) wp_json_encode( $state ) );
+	}
+
+	/**
+	 * The query as plain data.
+	 *
+	 * The third of the three properties §21.4 requires for a second backend to
+	 * remain possible: the domain model has to be serialisable, so a backend that
+	 * is not on this server can be sent the query itself rather than a dialect of
+	 * somebody's query language. A remote backend receives this; it never receives
+	 * Solr syntax, because Solr syntax is produced one layer further down and
+	 * nothing above the adapter has ever seen it.
+	 *
+	 * Ordered deliberately, and every key always present. A serialisation whose
+	 * shape depends on its content is one that has to be pattern-matched on the
+	 * way back in.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function to_array(): array {
+		return array(
+			'terms'        => $this->terms,
+			'site_id'      => $this->site_id,
+			'post_types'   => $this->post_types,
+			'filters'      => $this->filters,
+			'filter_modes' => $this->filter_modes,
+			'sort'         => $this->sort,
+			'page'         => $this->page,
+			'per_page'     => $this->per_page,
+			'language'     => $this->language,
+			'highlight'    => $this->highlight,
+			'facets'       => $this->facets,
+			'documents'    => $this->documents,
 		);
+	}
+
+	/**
+	 * Rebuild a query from its serialised form.
+	 *
+	 * Every value is re-coerced rather than trusted. This is the boundary a
+	 * remote backend's reply, a cached payload or a queued job crosses, and the
+	 * type of a value that has been through JSON is whatever JSON felt like:
+	 * an integer page number comes back as a float, an empty associative array
+	 * comes back as a list.
+	 *
+	 * Unknown keys are ignored and missing ones take their default, so a query
+	 * serialised by a newer version is readable by an older one and vice versa.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @param array<string,mixed> $state Serialised query.
+	 * @return self
+	 */
+	public static function from_array( array $state ): self {
+		$query = new self(
+			isset( $state['terms'] ) ? (string) $state['terms'] : '',
+			isset( $state['site_id'] ) ? (int) $state['site_id'] : 0
+		);
+
+		$query->post_types = array_values( array_map( 'strval', (array) ( $state['post_types'] ?? array() ) ) );
+		$query->sort       = isset( $state['sort'] ) ? (string) $state['sort'] : 'relevance';
+		$query->page       = max( 1, (int) ( $state['page'] ?? 1 ) );
+		$query->per_page   = max( 1, (int) ( $state['per_page'] ?? 10 ) );
+		$query->language   = isset( $state['language'] ) ? (string) $state['language'] : '';
+		$query->highlight  = ! empty( $state['highlight'] );
+		$query->documents  = ! isset( $state['documents'] ) || (bool) $state['documents'];
+
+		foreach ( (array) ( $state['filters'] ?? array() ) as $key => $values ) {
+			$scalars = array();
+
+			foreach ( (array) $values as $value ) {
+				if ( is_scalar( $value ) ) {
+					$scalars[] = $value;
+				}
+			}
+
+			if ( array() !== $scalars ) {
+				$query->filters[ (string) $key ] = $scalars;
+			}
+		}
+
+		foreach ( (array) ( $state['filter_modes'] ?? array() ) as $key => $mode ) {
+			// Anything that is not "and" is "or", which is the default a caller
+			// gets by saying nothing. A mode arriving as "AND", "all" or
+			// nonsense must not become a third behaviour.
+			$query->filter_modes[ (string) $key ] = 'and' === $mode ? 'and' : 'or';
+		}
+
+		foreach ( (array) ( $state['facets'] ?? array() ) as $key => $parent ) {
+			$query->facets[ (string) $key ] = is_scalar( $parent ) ? (string) $parent : '';
+		}
+
+		return $query;
 	}
 }

@@ -3,7 +3,7 @@
  * Plugin Name:       SolrEngine
  * Plugin URI:        https://www.solrengine.com
  * Description:       Apache Solr powered search for WordPress. Faster, more relevant results, with WordPress search as an automatic fallback.
- * Version:           0.9.0
+ * Version:           0.10.0
  * Requires at least: 6.5
  * Requires PHP:      7.4
  * Author:            SolrEngine
@@ -39,7 +39,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SOLRENGINE_VERSION', '0.9.0' );
+define( 'SOLRENGINE_VERSION', '0.10.0' );
 define( 'SOLRENGINE_PLUGIN_FILE', __FILE__ );
 define( 'SOLRENGINE_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SOLRENGINE_PLUGIN_URL', plugin_dir_url( __FILE__ ) );

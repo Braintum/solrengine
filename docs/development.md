@@ -48,6 +48,27 @@ bash bin/install-wp-tests.sh wordpress_test root '' 127.0.0.1 latest
 SOLRENGINE_TEST_SUITE=integration composer test:integration
 ```
 
+## Working without Solr
+
+```php
+define( 'SOLRENGINE_MEMORY_BACKEND', true );
+```
+
+Registers an in-memory backend, selectable on the connection screen. It holds
+documents for one request, so a page that indexes and a page that searches see
+different worlds — it is for working on admin screens, hooks and the WordPress
+integration, not for looking at search results.
+
+Its real job is `tests/Unit/BackendConformanceTest.php`, which asserts the rules
+the backend contracts state in prose — writes are upserts, an unconstrained
+selector is refused, a search never crosses sites — against an implementation,
+with no server needed. The Solr adapter is held to the same rules by the backend
+suite below; the difference is that these run on every commit rather than on
+every commit where someone remembered to start Docker.
+
+If a change to the WordPress layer cannot be made without teaching the memory
+backend some Solr vocabulary, the abstraction has leaked and that is the alarm.
+
 ## Solr for backend tests
 
 ```bash

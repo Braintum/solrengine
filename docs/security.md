@@ -159,6 +159,20 @@ acceptable, use `SOLRENGINE_SOLR_USER` and `SOLRENGINE_SOLR_PASSWORD` in
 injected by the query builder, never supplied by a caller, and never removable
 through a hook.
 
+## Backends
+
+Each backend keeps its own credentials, in its own option. With one backend that
+was a distinction without a difference; with two it is the difference between a
+Solr password staying with Solr and being handed to whatever else the site is
+pointed at.
+
+A backend that manages its own schema reports it, and the schema screens stand
+down rather than offering changes that cannot be applied. That path was prose in
+a contract until a second adapter made it real.
+
+See [privacy](privacy.md) for what each backend is sent, and for the rules any
+future off-site backend has to meet before it ships.
+
 ## Data exposure
 
 By default only publicly visible content is indexed. Drafts, private posts,
