@@ -105,6 +105,12 @@ src/Support/        Container, configuration, credentials, logging.
 src/Backend/        Backend adapters and the registry they register into.
 src/Bootstrap.php   Composition root. The only class that knows how the others
                     are built.
+src/Language/       Language tags and the site's languages. Pure.
+src/Multisite/      Network configuration and this site's place in a network.
+src/Integration/    Everything that knows about a specific other plugin:
+                    WooCommerce, WPML, Polylang.
+tests/stubs/        Hand-written signatures for optional plugins, so static
+                    analysis can check calls into them. Never loaded at runtime.
 tests/Unit/         No WordPress, no Solr.
 tests/Integration/  WordPress, mocked backend.
 tests/Backend/      WordPress and a real Solr.
@@ -146,6 +152,12 @@ Everything else lives in options, and nothing SolrEngine writes is autoloaded.
   each handler for, and static analysis cannot follow one into a parent class.
 - A handler reads `$_POST` once, immediately after that nonce check, and passes
   the array on. Nothing further down touches a superglobal.
+- An optional plugin is reached through its own public API, never through its
+  tables or its taxonomy terms. Those move between major versions; the public
+  functions do not.
+- Every language reaching a document or a query goes through
+  `Language\LanguageTag` first. Four systems spell a locale four ways, and a
+  document indexed under one spelling never matches a query using another.
 
 ## The 0.1.0 prototype
 

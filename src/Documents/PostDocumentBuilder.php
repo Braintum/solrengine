@@ -11,6 +11,8 @@ use SolrEngine\Contracts\Document;
 use SolrEngine\Contracts\DocumentRef;
 use SolrEngine\Contracts\FieldType;
 use SolrEngine\Contracts\Result;
+use SolrEngine\Language\Languages;
+use SolrEngine\Language\LanguageTag;
 use WP_Post;
 use WP_Term;
 
@@ -51,16 +53,40 @@ final class PostDocumentBuilder {
 	private $max_content_bytes;
 
 	/**
+	 * The site's languages, or null when nothing provides them.
+	 *
+	 * @var Languages|null
+	 */
+	private $languages;
+
+	/**
+	 * Primary subtags whose analysed fields this index has.
+	 *
+	 * @var string[]
+	 */
+	private $analysed;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param MetaAllowlist $allowlist         Allowed meta keys.
-	 * @param int           $site_id           Site identifier.
-	 * @param int           $max_content_bytes Content truncation limit.
+	 * @param MetaAllowlist  $allowlist         Allowed meta keys.
+	 * @param int            $site_id           Site identifier.
+	 * @param int            $max_content_bytes Content truncation limit.
+	 * @param Languages|null $languages         The site's languages.
+	 * @param string[]       $analysed          Subtags with analysed fields in the schema.
 	 */
-	public function __construct( MetaAllowlist $allowlist, int $site_id, int $max_content_bytes = 524288 ) {
+	public function __construct(
+		MetaAllowlist $allowlist,
+		int $site_id,
+		int $max_content_bytes = 524288,
+		?Languages $languages = null,
+		array $analysed = array()
+	) {
 		$this->allowlist         = $allowlist;
 		$this->site_id           = $site_id;
 		$this->max_content_bytes = $max_content_bytes;
+		$this->languages         = $languages;
+		$this->analysed          = array_map( 'strval', $analysed );
 	}
 
 	/**
@@ -139,6 +165,7 @@ final class PostDocumentBuilder {
 		$this->set( $fields, DocumentFields::COMMENTS, FieldType::INT, $post->comment_count );
 		$this->set( $fields, DocumentFields::PARENT, FieldType::INT, $post->post_parent );
 
+		$this->add_language( $fields, $post );
 		$this->add_thumbnail( $fields, $post );
 		$this->add_taxonomies( $fields, $post );
 		$this->add_meta( $fields, $post );
@@ -165,6 +192,57 @@ final class PostDocumentBuilder {
 		return $document instanceof Document
 			? Result::success( $document )
 			: Result::failure( 'filter_returned_non_document', 'A solrengine_document filter returned something that is not a Document.' );
+	}
+
+	/**
+	 * Record the language of a post, and analyse its text in that language.
+	 *
+	 * The tag is written on every document, on a monolingual site as much as a
+	 * multilingual one. It costs one short string and it is what lets a network
+	 * of single-language sites share one collection and still be searched per
+	 * language — the same reasoning as §10.2 gives for writing the site
+	 * identifier unconditionally.
+	 *
+	 * The analysed copies are written only for languages this index actually has
+	 * a field for. Writing `se_txtde_title` into a schema with no `se_txtde_*`
+	 * pattern is not a degraded index: Solr rejects the whole document, so one
+	 * unconfigured language would stop the site indexing.
+	 *
+	 * Nothing here is stored twice in the stored sense — the analysed fields exist
+	 * to be searched and the contract declares them unstored, so the index grows
+	 * by their terms rather than by a second copy of every post body.
+	 *
+	 * @param array<string,mixed> $fields Fields being built.
+	 * @param WP_Post             $post   Post being mapped.
+	 * @return void
+	 */
+	private function add_language( array &$fields, WP_Post $post ): void {
+		if ( null === $this->languages ) {
+			return;
+		}
+
+		$tag = $this->languages->of_post( $post->ID );
+
+		$this->set( $fields, DocumentFields::LANG, FieldType::STRING, $tag );
+
+		$primary = LanguageTag::primary( $tag );
+
+		if ( '' === $primary || ! in_array( $primary, $this->analysed, true ) ) {
+			return;
+		}
+
+		foreach ( array( 'title', 'excerpt', 'content' ) as $part ) {
+			$source = 'se_txt_' . $part;
+
+			if ( ! isset( $fields[ $source ] ) ) {
+				// Absent for a password-protected post's content, which is
+				// withheld deliberately. Copying it here would put back exactly
+				// what the password was protecting.
+				continue;
+			}
+
+			$fields[ DocumentFields::analysed( $primary, $part ) ] = $fields[ $source ];
+		}
 	}
 
 	/**

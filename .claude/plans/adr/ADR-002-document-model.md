@@ -191,3 +191,49 @@ visitor ticking "Beginner" means, and — more importantly — it is what makes 
 count rendered beside "Beginner" equal the number of results that ticking it
 produces. A filter on term identifiers would count descendants and return only
 direct members, which is the defining bug of faceted search.
+
+## Addendum, 2026-09-20 — Phase 8 used the language field, and the naming convention broke once
+
+**Status:** the decision held, and one of its dormant fields paid for itself.
+`se_s_lang` was declared in the contract in Phase 1 and written by nothing until
+now, which meant switching a site to multilingual needed no schema change at all —
+the field lands in the `se_s_*` pattern that already exists. So does `se_i_site`,
+which Phase 0 wrote on every document including on single-site installs, and which
+is the only reason a network can move between one collection per site and one
+shared collection by changing a name.
+
+Two things this phase had to decide.
+
+### The type-prefix convention does not survive a second dimension
+
+Every field so far is `se_<type>_<name>`. A per-language analysed field needs its
+own Solr field type, so the obvious spelling is `se_txt_en_title` — type `txt`,
+language `en`, name `title`.
+
+That is unusable, and quietly so. Solr matches dynamic patterns on a literal
+prefix, and the existing `se_txt_*` matches `se_txt_en_title`. On a site whose
+English pattern has not been applied yet, English text would be indexed into the
+language-neutral field type with no error anywhere, and the results would look
+almost right.
+
+The convention is therefore extended by fusing the language into the prefix:
+`se_txten_title`, pattern `se_txten_*`. No existing pattern can match it, because
+none of them ends at a point where a language subtag could begin. A test asserts
+exactly that, against every pattern the contract declares, so adding a fourteenth
+pattern later cannot reintroduce the overlap silently.
+
+### The analysed copy is made in PHP, not by a copyField
+
+A `copyField` is unconditional. `source="se_txt_title" dest="se_txten_title"` runs
+every document through an English stemmer, German ones included, producing terms
+nobody will ever search for. Which analyser a document's text belongs in depends
+on the document's own language, which is knowledge only the builder has.
+
+So `PostDocumentBuilder` writes the copy, and only for languages whose pattern the
+schema already has — because writing into a pattern that does not exist is not a
+degraded index. Solr rejects the whole document, so one unconfigured language
+would stop the site indexing entirely.
+
+The analysed fields are declared unstored. They exist to be searched, and the text
+is already stored in the neutral field beside them; storing it twice would double
+the stored size of every post for nothing.

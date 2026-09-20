@@ -10,6 +10,7 @@ namespace SolrEngine\Search;
 use SolrEngine\Contracts\SearchQuery;
 use SolrEngine\Documents\DocumentFields;
 use SolrEngine\Integration\WooCommerce\ProductFields;
+use SolrEngine\Language\LanguageTag;
 
 /**
  * Builds Solr parameters from a structured query.
@@ -95,24 +96,34 @@ final class QueryTranslator {
 	private $facet_translator;
 
 	/**
+	 * Primary subtags whose analysed fields exist in this index.
+	 *
+	 * @var string[]
+	 */
+	private $analysed;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param RelevanceProfile   $relevance     Relevance settings.
 	 * @param FilterRegistry     $filters       Registered filters.
 	 * @param string[]           $return_fields Fields to return.
 	 * @param FacetRegistry|null $facets        Registered facets.
+	 * @param string[]           $analysed      Subtags with analysed fields in the index.
 	 */
 	public function __construct(
 		RelevanceProfile $relevance,
 		FilterRegistry $filters,
 		array $return_fields = array(),
-		?FacetRegistry $facets = null
+		?FacetRegistry $facets = null,
+		array $analysed = array()
 	) {
 		$this->relevance        = $relevance;
 		$this->filters          = $filters;
 		$this->return_fields    = array() !== $return_fields ? $return_fields : self::default_return_fields();
 		$this->facets           = $facets ?? new FacetRegistry();
 		$this->facet_translator = new FacetTranslator( $this->facets );
+		$this->analysed         = array_map( 'strval', $analysed );
 	}
 
 	/**
@@ -139,7 +150,7 @@ final class QueryTranslator {
 			'rows'       => $query->wants_documents() ? $query->per_page() : 0,
 			'start'      => $query->wants_documents() ? $query->offset() : 0,
 			'fl'         => implode( ',', $this->return_fields ) . ',score',
-			'qf'         => $this->relevance->query_fields(),
+			'qf'         => $this->query_fields( $query ),
 			'pf'         => $this->relevance->phrase_fields(),
 			'tie'        => $this->relevance->tie(),
 			// Nothing is gained by echoing our own parameters back, and an
@@ -196,6 +207,30 @@ final class QueryTranslator {
 		}
 
 		return $params;
+	}
+
+	/**
+	 * The qf expression for a query, including its language's analysed fields.
+	 *
+	 * The analysed fields are added only when the index actually has them. A
+	 * field name in qf that no schema defines is not a degraded search: Solr
+	 * rejects the request with "undefined field", so every search on the site
+	 * would fail.
+	 *
+	 * @param SearchQuery $query Query being translated.
+	 * @return string
+	 */
+	private function query_fields( SearchQuery $query ): string {
+		$fields  = $this->relevance->query_fields();
+		$primary = LanguageTag::primary( $query->language() );
+
+		if ( '' === $primary || ! in_array( $primary, $this->analysed, true ) ) {
+			return $fields;
+		}
+
+		$extra = $this->relevance->analysed_query_fields( $primary );
+
+		return '' === $extra ? $fields : $fields . ' ' . $extra;
 	}
 
 	/**
@@ -299,8 +334,24 @@ final class QueryTranslator {
 			$clauses[] = DocumentFields::POST_TYPE . ':(' . implode( ' OR ', $escaped ) . ')';
 		}
 
-		if ( '' !== $query->language() ) {
-			$clauses[] = DocumentFields::LANG . ':' . self::escape( $query->language() );
+		$language = $query->language();
+
+		if ( '' !== $language ) {
+			// Read this as "not (has a language that is not this one)". The
+			// straightforward positive clause would be wrong in a way that is
+			// invisible until it matters: every document indexed before 0.9.0
+			// carries no language field at all, so a positive filter deletes the
+			// entire existing index from the results the moment a multilingual
+			// plugin is activated, and keeps doing so until somebody reindexes.
+			//
+			// Phase 6 learned exactly this about catalogue visibility, and the
+			// shape of the fix is the same one: filter on what a document is
+			// excluded by, so a document with nothing to say matches.
+			$clauses[] = sprintf(
+				'*:* -(%1$s:[* TO *] -%1$s:%2$s)',
+				DocumentFields::LANG,
+				self::escape( $language )
+			);
 		}
 
 		foreach ( $query->filters() as $key => $values ) {

@@ -58,6 +58,33 @@ final class ContractRegistry {
 	public const LATEST = 1;
 
 	/**
+	 * Primary subtags this site wants analysed fields for.
+	 *
+	 * @var string[]
+	 */
+	private $languages;
+
+	/**
+	 * Constructor.
+	 *
+	 * Languages are part of the contract rather than an argument to every caller
+	 * of it, because five places ask for the current contract — the diagnostic,
+	 * the planner, the exporter, the CLI and the Tools screen — and a contract
+	 * that meant something different depending on who asked would produce a plan
+	 * that disagreed with the schema it was compared against.
+	 *
+	 * They do not change the contract *version*. An analysed field for German is
+	 * one site's configuration, not a new revision of what SolrEngine requires,
+	 * and bumping the version for it would tell every other site on every other
+	 * server that they are out of date.
+	 *
+	 * @param string[] $languages Primary subtags, for example "en", "de".
+	 */
+	public function __construct( array $languages = array() ) {
+		$this->languages = array_values( array_unique( array_map( 'strval', $languages ) ) );
+	}
+
+	/**
 	 * Build a contract.
 	 *
 	 * An unknown version falls back to the latest rather than failing. A site
@@ -74,7 +101,22 @@ final class ContractRegistry {
 	public function get( int $version ): SchemaContract {
 		$resolved = ( $version >= 1 && $version <= self::LATEST ) ? $version : self::LATEST;
 
-		return new SchemaContract( $resolved, $this->fields_v1(), $this->copy_fields_v1() );
+		return new SchemaContract(
+			$resolved,
+			array_merge( $this->fields_v1(), LanguageFields::fields( $this->languages ) ),
+			$this->copy_fields_v1()
+		);
+	}
+
+	/**
+	 * The subtags this contract carries analysed fields for.
+	 *
+	 * @since 0.9.0
+	 *
+	 * @return string[]
+	 */
+	public function languages(): array {
+		return $this->languages;
 	}
 
 	/**

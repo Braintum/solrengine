@@ -8,6 +8,7 @@
 namespace SolrEngine\Search;
 
 use SolrEngine\Documents\DocumentFields;
+use SolrEngine\Language\LanguageTag;
 
 /**
  * The knobs that decide which results come first.
@@ -140,6 +141,51 @@ final class RelevanceProfile {
 	 */
 	public function query_fields(): string {
 		return $this->weighted( $this->field_boosts );
+	}
+
+	/**
+	 * The qf additions for a language's analysed fields.
+	 *
+	 * The analysed fields mirror the weights of the neutral fields they duplicate,
+	 * which means a document matching in its own language scores roughly twice as
+	 * much as one matching only neutrally. That is the intended outcome, not an
+	 * accident of adding two numbers: a stemmed match in the language the
+	 * document is actually written in is a better signal than a literal match on
+	 * a token that happened to be spelled the same way.
+	 *
+	 * @since 0.9.0
+	 *
+	 * @param string $subtag Primary language subtag, for example "de".
+	 * @return string Field list, or an empty string when there is nothing to add.
+	 */
+	public function analysed_query_fields( string $subtag ): string {
+		$prefix = LanguageTag::field_prefix( $subtag );
+
+		if ( '' === $prefix ) {
+			return '';
+		}
+
+		$map = array(
+			DocumentFields::TITLE   => 'title',
+			DocumentFields::EXCERPT => 'excerpt',
+			DocumentFields::CONTENT => 'content',
+		);
+
+		$boosts = array();
+
+		foreach ( $map as $neutral => $part ) {
+			if ( ! isset( $this->field_boosts[ $neutral ] ) ) {
+				// A field the site has switched off stays off in every language.
+				// Re-adding it here would make a setting that looks like "do not
+				// search the content" mean "do not search the content, except in
+				// German".
+				continue;
+			}
+
+			$boosts[ DocumentFields::analysed( $subtag, $part ) ] = (float) $this->field_boosts[ $neutral ];
+		}
+
+		return $this->weighted( $boosts );
 	}
 
 	/**

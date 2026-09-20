@@ -10,6 +10,7 @@ namespace SolrEngine;
 use SolrEngine\Admin\ConnectionScreen;
 use SolrEngine\Admin\ContentScreen;
 use SolrEngine\Admin\DashboardScreen;
+use SolrEngine\Admin\NetworkScreen;
 use SolrEngine\Admin\SearchScreen;
 use SolrEngine\Admin\ToolsScreen;
 use SolrEngine\Backend\BackendRegistry;
@@ -38,7 +39,13 @@ use SolrEngine\Indexing\RunHistory;
 use SolrEngine\Integration\WordPress\InstantSearch;
 use SolrEngine\Integration\WordPress\QueryIntegration;
 use SolrEngine\Integration\WordPress\SearchFilters;
+use SolrEngine\Integration\Multilingual\CoreProvider;
+use SolrEngine\Integration\Multilingual\PolylangProvider;
+use SolrEngine\Integration\Multilingual\WpmlProvider;
 use SolrEngine\Integration\WooCommerce\WooCommerce;
+use SolrEngine\Language\Languages;
+use SolrEngine\Multisite\NetworkConfig;
+use SolrEngine\Multisite\SiteScope;
 use SolrEngine\Rest\RateLimiter;
 use SolrEngine\Rest\SearchController;
 use SolrEngine\Rest\StatusController;
@@ -188,9 +195,44 @@ final class Bootstrap {
 		$container = $this->container;
 
 		$container->share(
+			'network',
+			static function (): NetworkConfig {
+				return new NetworkConfig();
+			}
+		);
+
+		$container->share(
 			'config',
-			static function (): Config {
-				return new Config();
+			static function ( Container $c ): Config {
+				return new Config( array(), array(), $c->get( 'network' ) );
+			}
+		);
+
+		$container->share(
+			'site_scope',
+			static function ( Container $c ): SiteScope {
+				return new SiteScope(
+					$c->get( 'network' ),
+					$c->get( 'config' ),
+					(int) $c->get( 'site_id' )
+				);
+			}
+		);
+
+		$container->share(
+			'languages',
+			static function (): Languages {
+				// Preference order, most specific first. The core provider is
+				// last and always active, so every site has an answer: a
+				// monolingual site reports one language, which switches every
+				// language-aware behaviour off without a special case for it.
+				return new Languages(
+					array(
+						new WpmlProvider(),
+						new PolylangProvider(),
+						new CoreProvider(),
+					)
+				);
 			}
 		);
 
@@ -230,8 +272,13 @@ final class Bootstrap {
 
 		$container->share(
 			'schema.contracts',
-			static function (): ContractRegistry {
-				return new ContractRegistry();
+			static function ( Container $c ): ContractRegistry {
+				// The contract carries this site's analysed languages, so the
+				// plan, the export, the diagnostic and the CLI all describe the
+				// same schema. A contract that meant something different
+				// depending on who asked would produce a plan that disagreed
+				// with the schema it was compared against.
+				return new ContractRegistry( self::analysed_languages( $c ) );
 			}
 		);
 
@@ -302,7 +349,10 @@ final class Bootstrap {
 			static function ( Container $c ): PostDocumentBuilder {
 				return new PostDocumentBuilder(
 					$c->get( 'meta_allowlist' ),
-					(int) $c->get( 'site_id' )
+					(int) $c->get( 'site_id' ),
+					524288,
+					$c->get( 'languages' ),
+					self::analysed_languages( $c )
 				);
 			}
 		);
@@ -457,14 +507,20 @@ final class Bootstrap {
 		$container->share(
 			'search.filters',
 			static function ( Container $c ): FilterRegistry {
-				return FilterRegistry::defaults( (array) $c->get( 'search.taxonomies' ) );
+				return FilterRegistry::defaults(
+					(array) $c->get( 'search.taxonomies' ),
+					$c->get( 'languages' )->all()
+				);
 			}
 		);
 
 		$container->share(
 			'search.facets',
 			static function ( Container $c ): FacetRegistry {
-				return FacetRegistry::defaults( (array) $c->get( 'search.taxonomies' ) );
+				return FacetRegistry::defaults(
+					(array) $c->get( 'search.taxonomies' ),
+					$c->get( 'languages' )->all()
+				);
 			}
 		);
 
@@ -480,7 +536,8 @@ final class Bootstrap {
 					$c->get( 'search.relevance' ),
 					$c->get( 'search.filters' ),
 					array(),
-					$c->get( 'search.facets' )
+					$c->get( 'search.facets' ),
+					self::analysed_languages( $c )
 				);
 			}
 		);
@@ -586,6 +643,28 @@ final class Bootstrap {
 	}
 
 	/**
+	 * The primary subtags this site has analysed fields for.
+	 *
+	 * Read from configuration rather than detected, because detecting means
+	 * reading the live schema and this is asked on every request that builds a
+	 * document or a query. The Search screen is what puts a language in here, and
+	 * it only does so after confirming the server has the analyser and applying
+	 * the field that uses it — so a value here is a value the index can take.
+	 *
+	 * @param Container $container Service container.
+	 * @return string[]
+	 */
+	private static function analysed_languages( Container $container ): array {
+		$config = $container->get( 'config' );
+
+		if ( ! $config instanceof Config ) {
+			return array();
+		}
+
+		return array_values( array_map( 'strval', $config->get_array( 'index.analysed_languages', array() ) ) );
+	}
+
+	/**
 	 * Build a Solr backend, optionally pointed at a collection of our choosing.
 	 *
 	 * One builder for both uses. A rebuild needs a backend addressing the
@@ -607,7 +686,11 @@ final class Bootstrap {
 
 		$endpoint = $container->get( 'solr.endpoint_validator' )->validate(
 			$config->get_string( 'connection.endpoint' ),
-			'' !== $collection ? $collection : $config->get_string( 'connection.collection' ),
+			// Through the site scope rather than straight from configuration: on
+			// a network using one collection per site, the name is derived from
+			// the network's pattern and the site's identifier, and a caller
+			// reading the raw setting would address the wrong collection.
+			'' !== $collection ? $collection : $container->get( 'site_scope' )->collection(),
 			$config->get_bool( 'connection.allow_private_ip' )
 		);
 
@@ -652,6 +735,36 @@ final class Bootstrap {
 
 		add_action( 'init', array( $this, 'load_textdomain' ) );
 
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			// Before the opt-in gate, deliberately. "wp solrengine network enable"
+			// has to work from a site that is switched off, which is every site
+			// the first time somebody runs it.
+			$this->register_cli();
+		}
+
+		if ( ! $container->get( 'site_scope' )->is_enabled() ) {
+			// A site in a network where SolrEngine is activated network-wide and
+			// this site has not been switched on. Nothing is indexed, nothing is
+			// searched, and WordPress behaves exactly as it did before.
+			//
+			// A site where somebody activated the plugin themselves is never in
+			// this branch: doing that *is* the opt-in.
+			//
+			// This is the whole point of per-site opt-in: activating a plugin
+			// across four hundred sites must not start four hundred full syncs
+			// against one Solr cluster. §20.
+			//
+			// The network screen is still registered, because a network
+			// administrator visiting a site in the network needs somewhere to go.
+			if ( is_admin() ) {
+				$this->register_network_admin( $container );
+
+				add_action( 'admin_notices', array( $this, 'render_disabled_notice' ) );
+			}
+
+			return;
+		}
+
 		$this->register_indexing( $container );
 		$this->register_search( $container );
 		$this->register_filters_ui( $container );
@@ -660,10 +773,7 @@ final class Bootstrap {
 
 		if ( is_admin() ) {
 			$this->register_admin( $container );
-		}
-
-		if ( defined( 'WP_CLI' ) && WP_CLI ) {
-			$this->register_cli();
+			$this->register_network_admin( $container );
 		}
 	}
 
@@ -684,7 +794,8 @@ final class Bootstrap {
 			return new ConnectionScreen(
 				$container->get( 'config' ),
 				$container->get( 'credentials' ),
-				$container->get( 'diagnostics.connection' )
+				$container->get( 'diagnostics.connection' ),
+				$container->get( 'site_scope' )
 			);
 		};
 
@@ -698,7 +809,10 @@ final class Bootstrap {
 		$search = static function () use ( $container ): SearchScreen {
 			return new SearchScreen(
 				$container->get( 'config' ),
-				$container->get( 'search.facets' )
+				$container->get( 'search.facets' ),
+				$container->get( 'languages' ),
+				$container->get( 'backends' ),
+				$container->get( 'schema.contracts' )
 			);
 		};
 
@@ -749,6 +863,13 @@ final class Bootstrap {
 		);
 
 		add_action(
+			'admin_post_' . SearchScreen::ACTION . '_languages',
+			static function () use ( $search ): void {
+				$search()->handle_languages();
+			}
+		);
+
+		add_action(
 			'admin_post_' . ToolsScreen::ACTION_SCHEMA,
 			static function () use ( $container ): void {
 				( new ToolsScreen( $container ) )->handle_schema();
@@ -766,6 +887,64 @@ final class Bootstrap {
 			'admin_post_' . ToolsScreen::ACTION_REBUILD,
 			static function () use ( $container ): void {
 				( new ToolsScreen( $container ) )->handle_rebuild();
+			}
+		);
+	}
+
+	/**
+	 * Tell an administrator why SolrEngine is doing nothing here.
+	 *
+	 * An inert plugin with a full settings screen looks broken. This says which
+	 * it is, and who can change it.
+	 *
+	 * @since 0.9.0
+	 *
+	 * @return void
+	 */
+	public function render_disabled_notice(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		echo '<div class="notice notice-info"><p>'
+			. esc_html__( 'SolrEngine is not switched on for this site. Searches are answered by WordPress and nothing is being indexed. A network administrator can switch it on under Network Admin, Settings, SolrEngine.', 'solrengine' )
+			. '</p></div>';
+	}
+
+	/**
+	 * Register the network administration screen.
+	 *
+	 * Registered from every site as well as from the network dashboard, because
+	 * network_admin_menu fires on network requests only and a site request needs
+	 * to be able to link to it.
+	 *
+	 * @param Container $container Service container.
+	 * @return void
+	 */
+	private function register_network_admin( Container $container ): void {
+		if ( ! is_multisite() ) {
+			return;
+		}
+
+		$screen = static function () use ( $container ): NetworkScreen {
+			return new NetworkScreen(
+				$container->get( 'network' ),
+				$container->get( 'credentials' ),
+				$container->get( 'config' )
+			);
+		};
+
+		add_action(
+			'network_admin_menu',
+			static function () use ( $screen ): void {
+				$screen()->add_menu();
+			}
+		);
+
+		add_action(
+			'network_admin_edit_' . NetworkScreen::ACTION,
+			static function () use ( $screen ): void {
+				$screen()->handle_save();
 			}
 		);
 	}
@@ -792,6 +971,10 @@ final class Bootstrap {
 		\WP_CLI::add_command( 'solrengine index', array( $commands, 'index' ) );
 		\WP_CLI::add_command( 'solrengine rebuild', array( $commands, 'rebuild' ) );
 		\WP_CLI::add_command( 'solrengine history', array( $commands, 'history' ) );
+
+		if ( is_multisite() ) {
+			\WP_CLI::add_command( 'solrengine network', array( $commands, 'network' ) );
+		}
 	}
 
 	/**
@@ -1019,7 +1202,8 @@ final class Bootstrap {
 					$config,
 					(int) $c->get( 'site_id' ),
 					$c->get( 'search.filters' ),
-					$c->get( 'search.facets' )
+					$c->get( 'search.facets' ),
+					$c->get( 'languages' )
 				);
 			}
 		);

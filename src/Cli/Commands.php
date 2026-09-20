@@ -13,6 +13,7 @@ use SolrEngine\Diagnostics\ConnectionDiagnostic;
 use SolrEngine\Indexing\FullSync;
 use SolrEngine\Indexing\Rebuild;
 use SolrEngine\Indexing\RunHistory;
+use SolrEngine\Multisite\NetworkConfig;
 use SolrEngine\Support\Container;
 use SolrEngine\Schema\ContractRegistry;
 use SolrEngine\Schema\SchemaExporter;
@@ -747,5 +748,256 @@ final class Commands {
 		}
 
 		return $result->value( array() );
+	}
+
+	/**
+	 * Manage SolrEngine across a multisite network.
+	 *
+	 * Network-wide work belongs here rather than in the network admin screen, and
+	 * §14.4 says so from the outset: per-site collections multiply every migration
+	 * across the network, and a per-site button clicked four hundred times is not
+	 * an operation, it is an afternoon.
+	 *
+	 * Indexing and schema work run **one site at a time, in a separate process
+	 * per site**. That is the throttle §20 asks for, and the isolation is not
+	 * optional: WordPress caches a great deal per site, and a single process
+	 * walking four hundred sites through switch_to_blog() accumulates all of it
+	 * until it runs out of memory somewhere in the three hundreds.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <action>
+	 * : What to do.
+	 * ---
+	 * options:
+	 *   - status
+	 *   - enable
+	 *   - disable
+	 *   - index
+	 *   - schema
+	 * ---
+	 *
+	 * [<site>...]
+	 * : Site IDs, for enable and disable.
+	 *
+	 * [--all]
+	 * : Every site in the network, for enable and disable.
+	 *
+	 * [--pause=<seconds>]
+	 * : Wait this long between sites, for index and schema. Default 0.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp solrengine network status
+	 *     wp solrengine network enable 2 3 4
+	 *     wp solrengine network index --pause=30
+	 *     wp solrengine network schema
+	 *
+	 * @since 0.9.0
+	 *
+	 * @param array<int,string>    $args       Positional arguments.
+	 * @param array<string,string> $assoc_args Flags.
+	 * @return void
+	 */
+	public function network( array $args, array $assoc_args ): void {
+		if ( ! is_multisite() ) {
+			WP_CLI::error( 'This is not a multisite network.' );
+		}
+
+		$network = $this->container->get( 'network' );
+
+		if ( ! $network instanceof NetworkConfig ) {
+			WP_CLI::error( 'Network configuration is unavailable.' );
+		}
+
+		$action = isset( $args[0] ) ? (string) $args[0] : 'status';
+
+		switch ( $action ) {
+			case 'enable':
+				$this->network_switch( $network, array_slice( $args, 1 ), $assoc_args, true );
+				return;
+
+			case 'disable':
+				$this->network_switch( $network, array_slice( $args, 1 ), $assoc_args, false );
+				return;
+
+			case 'index':
+				$this->network_run( $network, 'solrengine index', $assoc_args );
+				return;
+
+			case 'schema':
+				$this->network_run( $network, 'solrengine schema apply --yes', $assoc_args );
+				return;
+
+			default:
+				$this->network_status( $network );
+		}
+	}
+
+	/**
+	 * Print the network's state.
+	 *
+	 * @param NetworkConfig $network Network configuration.
+	 * @return void
+	 */
+	private function network_status( NetworkConfig $network ): void {
+		$enabled = $network->enabled_sites();
+
+		WP_CLI::log( sprintf( 'Topology: %s.', $network->topology() ) );
+
+		$pattern = $network->collection_pattern();
+
+		WP_CLI::log(
+			'' === $pattern
+				? 'Collection naming: each site names its own.'
+				: sprintf( 'Collection naming: %s', $pattern )
+		);
+
+		$rows = array();
+
+		foreach ( $this->network_sites() as $site ) {
+			$id = (int) $site->blog_id;
+
+			$rows[] = array(
+				'id'   => $id,
+				'site' => (string) $site->domain . (string) $site->path,
+				'on'   => in_array( $id, $enabled, true ) ? 'yes' : 'no',
+			);
+		}
+
+		WP_CLI\Utils\format_items( 'table', $rows, array( 'id', 'site', 'on' ) );
+	}
+
+	/**
+	 * Switch sites on or off.
+	 *
+	 * @param NetworkConfig        $network    Network configuration.
+	 * @param array<int,string>    $ids        Site identifiers given.
+	 * @param array<string,string> $assoc_args Flags.
+	 * @param bool                 $on         Whether to enable.
+	 * @return void
+	 */
+	private function network_switch( NetworkConfig $network, array $ids, array $assoc_args, bool $on ): void {
+		$targets = array_map( 'intval', $ids );
+
+		if ( isset( $assoc_args['all'] ) ) {
+			$targets = array();
+
+			foreach ( $this->network_sites() as $site ) {
+				$targets[] = (int) $site->blog_id;
+			}
+		}
+
+		if ( array() === $targets ) {
+			WP_CLI::error( 'Name at least one site ID, or pass --all.' );
+		}
+
+		$enabled = $network->enabled_sites();
+
+		$updated = $on
+			? array_merge( $enabled, $targets )
+			: array_diff( $enabled, $targets );
+
+		$network->set_enabled_sites( array_values( $updated ) );
+
+		WP_CLI::success(
+			sprintf(
+				'%d site(s) switched %s. %s',
+				count( $targets ),
+				$on ? 'on' : 'off',
+				$on
+					? 'Nothing is indexed yet: run "wp solrengine network index" when you are ready.'
+					: 'Their documents are still in Solr. Remove them per site if you want them gone.'
+			)
+		);
+	}
+
+	/**
+	 * Run one command on every enabled site, one at a time.
+	 *
+	 * A separate process per site, through runcommand() with launch enabled. In
+	 * one process the per-site caches WordPress builds are never released, and a
+	 * walk across a large network dies of memory exhaustion partway through — at
+	 * which point half the network is indexed and nothing says which half.
+	 *
+	 * A failure on one site is reported and the walk continues. Stopping would
+	 * mean one unreachable site blocks every site after it in the list.
+	 *
+	 * @param NetworkConfig        $network    Network configuration.
+	 * @param string               $command    Command to run per site.
+	 * @param array<string,string> $assoc_args Flags.
+	 * @return void
+	 */
+	private function network_run( NetworkConfig $network, string $command, array $assoc_args ): void {
+		$enabled = $network->enabled_sites();
+
+		if ( array() === $enabled ) {
+			WP_CLI::error( 'No sites are switched on. Run "wp solrengine network enable" first.' );
+		}
+
+		$pause  = isset( $assoc_args['pause'] ) ? max( 0, (int) $assoc_args['pause'] ) : 0;
+		$failed = 0;
+		$done   = 0;
+
+		foreach ( $this->network_sites() as $site ) {
+			$id = (int) $site->blog_id;
+
+			if ( ! in_array( $id, $enabled, true ) ) {
+				continue;
+			}
+
+			$url = (string) $site->domain . (string) $site->path;
+
+			WP_CLI::log( sprintf( '--- site %d (%s)', $id, $url ) );
+
+			$result = WP_CLI::runcommand(
+				$command . ' --url=' . escapeshellarg( $url ),
+				array(
+					'launch'     => true,
+					'exit_error' => false,
+					'return'     => 'all',
+				)
+			);
+
+			if ( is_object( $result ) && 0 !== (int) $result->return_code ) {
+				++$failed;
+
+				WP_CLI::warning( sprintf( 'Site %d failed: %s', $id, trim( (string) $result->stderr ) ) );
+			} else {
+				++$done;
+			}
+
+			if ( $pause > 0 ) {
+				// The throttle. One Solr cluster serving a whole network has
+				// other work to do, and a pause between sites is the difference
+				// between a slow reindex and a cluster that stops answering
+				// searches while it runs.
+				sleep( $pause );
+			}
+		}
+
+		if ( $failed > 0 ) {
+			WP_CLI::warning( sprintf( '%d site(s) finished, %d failed.', $done, $failed ) );
+
+			return;
+		}
+
+		WP_CLI::success( sprintf( '%d site(s) finished.', $done ) );
+	}
+
+	/**
+	 * The sites in this network, ordered by identifier.
+	 *
+	 * @return array<int,\WP_Site>
+	 */
+	private function network_sites(): array {
+		$sites = get_sites(
+			array(
+				'number'  => 0,
+				'orderby' => 'id',
+			)
+		);
+
+		return is_array( $sites ) ? array_values( $sites ) : array();
 	}
 }

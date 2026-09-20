@@ -50,9 +50,10 @@ final class FacetRegistry {
 	 * @since 0.6.0
 	 *
 	 * @param array<string,array{label?:string,hierarchical?:bool}> $taxonomies Public taxonomies.
+	 * @param array<string,string>                                  $languages  Languages the site publishes in.
 	 * @return self
 	 */
-	public static function defaults( array $taxonomies = array() ): self {
+	public static function defaults( array $taxonomies = array(), array $languages = array() ): self {
 		$registry = new self();
 
 		$registry->register(
@@ -63,6 +64,19 @@ final class FacetRegistry {
 				FieldType::STRING
 			)
 		);
+
+		if ( count( $languages ) > 1 ) {
+			// Only on a site that has more than one. A facet offering a single
+			// choice that every result already matches is a row of furniture.
+			$registry->register(
+				FacetDefinition::terms(
+					'language',
+					DocumentFields::LANG,
+					__( 'Language', 'solrengine' ),
+					FieldType::STRING
+				)
+			);
+		}
 
 		foreach ( $taxonomies as $name => $taxonomy ) {
 			$name  = (string) $name;

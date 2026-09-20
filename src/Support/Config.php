@@ -7,13 +7,29 @@
 
 namespace SolrEngine\Support;
 
+use SolrEngine\Multisite\NetworkConfig;
+
 /**
- * Reads configuration from defaults, stored options and PHP constants.
+ * Reads configuration from defaults, network options, stored options and PHP
+ * constants.
  *
- * Precedence, lowest to highest: packaged defaults, the stored option, then a
- * PHP constant. Constants win because they live in wp-config.php, which is
- * where an operator pins configuration that a compromised or careless admin
- * session must not be able to change.
+ * Precedence, lowest to highest:
+ *
+ * 1. Packaged defaults.
+ * 2. A network value, as a default a site may override.
+ * 3. The site's own stored option.
+ * 4. A network value the network has **pinned**, which a site may not override.
+ * 5. A PHP constant.
+ *
+ * Constants win outright because they live in wp-config.php, which is where an
+ * operator pins configuration that a compromised or careless admin session must
+ * not be able to change. A network pin sits just below, for the same reason one
+ * level down: a network administrator with one Solr cluster does not want site 87
+ * pointed somewhere else.
+ *
+ * The same network value therefore appears twice in that list, at the bottom as
+ * a default and near the top as a pin. That is deliberate rather than clever:
+ * one network setting, and the network decides whether it is advice or law.
  *
  * Two deliberate departures from the 0.1.0 prototype:
  *
@@ -74,12 +90,22 @@ final class Config {
 	private $loaded = array();
 
 	/**
+	 * Network configuration, or null on a single site.
+	 *
+	 * @var NetworkConfig|null
+	 */
+	private $network;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param array<string,mixed>  $defaults  Overrides for the packaged defaults.
 	 * @param array<string,string> $constants Overrides for the constant map.
+	 * @param NetworkConfig|null   $network   Network configuration.
 	 */
-	public function __construct( array $defaults = array(), array $constants = array() ) {
+	public function __construct( array $defaults = array(), array $constants = array(), ?NetworkConfig $network = null ) {
+		$this->network = $network;
+
 		$this->defaults = array_merge(
 			array(
 				'connection.endpoint'           => '',
@@ -118,6 +144,14 @@ final class Config {
 				'search.rate_limit'             => 60,
 				'search.rate_window'            => 60,
 				'search.relevance'              => array(),
+
+				// Multilingual. Scoping is on by default: a visitor reading the
+				// German site and searching from the German header expects German
+				// results. The analysed list is empty until a language is enabled
+				// from the Search screen, which only offers languages whose
+				// analyser the server actually has.
+				'search.language_scope'         => true,
+				'index.analysed_languages'      => array(),
 
 				'runtime.debug'                 => false,
 
@@ -164,10 +198,22 @@ final class Config {
 			return constant( $this->constants[ $path ] );
 		}
 
+		if ( null !== $this->network && $this->network->is_pinned( $path ) ) {
+			return $this->network->get( $path );
+		}
+
 		$stored = $this->stored_value( $path );
 
 		if ( null !== $stored ) {
 			return $stored;
+		}
+
+		if ( null !== $this->network ) {
+			$networked = $this->network->get( $path );
+
+			if ( null !== $networked ) {
+				return $networked;
+			}
 		}
 
 		if ( array_key_exists( $path, $this->defaults ) ) {
@@ -254,7 +300,32 @@ final class Config {
 	 * @return bool
 	 */
 	public function is_locked( string $path ): bool {
-		return isset( $this->constants[ $path ] ) && defined( $this->constants[ $path ] );
+		return '' !== $this->lock_source( $path );
+	}
+
+	/**
+	 * What is pinning a value, when something is.
+	 *
+	 * The admin screens need the distinction, not just the fact: "set in
+	 * wp-config.php" and "set for the whole network" send an administrator to two
+	 * completely different places, and telling them the wrong one wastes an
+	 * afternoon.
+	 *
+	 * @since 0.9.0
+	 *
+	 * @param string $path Dot path.
+	 * @return string "constant", "network", or an empty string when editable.
+	 */
+	public function lock_source( string $path ): string {
+		if ( isset( $this->constants[ $path ] ) && defined( $this->constants[ $path ] ) ) {
+			return 'constant';
+		}
+
+		if ( null !== $this->network && $this->network->is_pinned( $path ) ) {
+			return 'network';
+		}
+
+		return '';
 	}
 
 	/**
@@ -300,6 +371,10 @@ final class Config {
 	 */
 	public function flush(): void {
 		$this->loaded = array();
+
+		if ( null !== $this->network ) {
+			$this->network->flush();
+		}
 	}
 
 	/**

@@ -93,6 +93,19 @@ Three routes, in order of preference:
 
 All three come from the same contract definition, so they cannot drift.
 
+### Language analysers
+
+The shipped configset also defines a `text_<language>` field type for
+twenty-four languages. They are field *types* only: nothing uses them until a
+multilingual site switches a language on, and a site that never does pays
+nothing for them.
+
+If you created your collection from Solr's own `_default` configset, it defines
+`text_general` and `text_en` and no others, and SolrEngine's language list will
+be nearly empty. Applying the shipped configset fills it in. Content in a
+language with no analyser is still indexed and still searchable; only stemming is
+missing. See [multilingual](multilingual.md).
+
 ### After a schema change
 
 Solr does not update documents that are already indexed. A new field stays

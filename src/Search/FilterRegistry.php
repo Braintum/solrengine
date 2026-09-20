@@ -49,13 +49,22 @@ final class FilterRegistry {
 	 * @since 0.4.0
 	 *
 	 * @param array<string,array{label?:string,hierarchical?:bool}> $taxonomies Public taxonomies.
+	 * @param array<string,string>                                  $languages  Languages the site publishes in.
 	 * @return self
 	 */
-	public static function defaults( array $taxonomies = array() ): self {
+	public static function defaults( array $taxonomies = array(), array $languages = array() ): self {
 		$registry = new self();
 
 		$registry->register( 'post_type', DocumentFields::POST_TYPE, FieldType::STRING, __( 'Content type', 'solrengine' ) );
 		$registry->register( 'author', DocumentFields::AUTHOR_ID, FieldType::INT, __( 'Author', 'solrengine' ) );
+
+		if ( count( $languages ) > 1 ) {
+			// A filter as well as the query-level scope, because the two answer
+			// different questions. The scope is "this visitor is reading the
+			// German site"; the filter is "show me the French translations",
+			// which a REST caller building a language switcher needs to ask.
+			$registry->register( 'language', DocumentFields::LANG, FieldType::STRING, __( 'Language', 'solrengine' ) );
+		}
 
 		foreach ( $taxonomies as $name => $taxonomy ) {
 			$name  = (string) $name;

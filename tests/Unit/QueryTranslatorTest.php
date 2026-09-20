@@ -199,4 +199,94 @@ final class QueryTranslatorTest extends TestCase {
 
 		$this->assertStringContainsString( 'NOW/HOUR', $profile->boost_function() );
 	}
+
+	// -- Language scoping --------------------------------------------------
+
+	public function test_a_language_scope_still_matches_documents_with_no_language(): void {
+		$params = $this->translator()->translate(
+			( new SearchQuery( 'laptop', 1 ) )->with_language( 'de-DE' )
+		);
+
+		$clause = $this->clause_mentioning( $params['fq'], DocumentFields::LANG );
+
+		// Read as "not (has a language that is not this one)". The obvious
+		// positive filter would delete every document indexed before 0.9.0 from
+		// the results the moment a multilingual plugin was activated, and keep
+		// doing so until somebody reindexed. Phase 6 learned this about
+		// catalogue visibility; the shape of the fix is the same.
+		$this->assertStringStartsWith( '*:* -(', $clause );
+		$this->assertStringContainsString( DocumentFields::LANG . ':[* TO *]', $clause );
+		$this->assertStringContainsString( DocumentFields::LANG . ':de\\-DE', $clause );
+	}
+
+	public function test_no_language_scope_adds_no_clause(): void {
+		$params = $this->translator()->translate( new SearchQuery( 'laptop', 1 ) );
+
+		$this->assertSame( '', $this->clause_mentioning( $params['fq'], DocumentFields::LANG ) );
+	}
+
+	public function test_analysed_fields_are_searched_only_when_the_index_has_them(): void {
+		$without = new QueryTranslator( new RelevanceProfile(), FilterRegistry::defaults() );
+		$with    = new QueryTranslator( new RelevanceProfile(), FilterRegistry::defaults(), array(), null, array( 'de' ) );
+
+		$query = ( new SearchQuery( 'haus', 1 ) )->with_language( 'de-DE' );
+
+		// A field name in qf that no schema defines is not a degraded search:
+		// Solr rejects the request outright, so every search on the site fails.
+		$this->assertStringNotContainsString( 'se_txtde_', $without->translate( $query )['qf'] );
+		$this->assertStringContainsString( 'se_txtde_title', $with->translate( $query )['qf'] );
+	}
+
+	public function test_analysed_fields_follow_the_language_of_the_query(): void {
+		$translator = new QueryTranslator(
+			new RelevanceProfile(),
+			FilterRegistry::defaults(),
+			array(),
+			null,
+			array( 'de', 'fr' )
+		);
+
+		$params = $translator->translate( ( new SearchQuery( 'maison', 1 ) )->with_language( 'fr-FR' ) );
+
+		$this->assertStringContainsString( 'se_txtfr_title', $params['qf'] );
+		$this->assertStringNotContainsString( 'se_txtde_', $params['qf'] );
+	}
+
+	public function test_analysed_fields_mirror_the_neutral_weights(): void {
+		$profile = RelevanceProfile::from_config(
+			array(
+				'field_boosts' => array(
+					'se_txt_title'   => 5.0,
+					'se_txt_content' => 0,
+				),
+			)
+		);
+
+		$translator = new QueryTranslator( $profile, FilterRegistry::defaults(), array(), null, array( 'de' ) );
+		$params     = $translator->translate( ( new SearchQuery( 'haus', 1 ) )->with_language( 'de' ) );
+
+		$this->assertStringContainsString( 'se_txtde_title^5', $params['qf'] );
+
+		// A field switched off stays off in every language. Re-adding it here
+		// would make "do not search the content" mean "do not search the
+		// content, except in German".
+		$this->assertStringNotContainsString( 'se_txtde_content', $params['qf'] );
+	}
+
+	/**
+	 * The first filter query mentioning a field, or an empty string.
+	 *
+	 * @param array<int,string> $clauses Filter queries.
+	 * @param string            $field   Field name.
+	 * @return string
+	 */
+	private function clause_mentioning( array $clauses, string $field ): string {
+		foreach ( $clauses as $clause ) {
+			if ( false !== strpos( $clause, $field ) ) {
+				return $clause;
+			}
+		}
+
+		return '';
+	}
 }

@@ -1969,7 +1969,7 @@ Each phase ends in something demonstrable. No phase is "refactoring".
 | **P5 — Facets** ✅ | Generic faceted search | Facet registry, JSON Facet translation, multi-select, hierarchical taxonomy facets, `facets` endpoint, filter blocks and shortcodes | Medium |
 | **P6 — WooCommerce** ✅ | Fast product search and catalogue filtering | Product and variation mapping, visibility rules, price and attribute facets, Product Collection block integration, classic shop loop integration | **High — §15.4, §15.6** |
 | **P7 — Advanced administration** ✅ | Power users stop needing the filesystem | Field mapping UI, relevance tuning, schema migration UX, alias-based zero-downtime reindex, index history | Medium |
-| **P8 — Multisite and multilingual** | Networks and non-English sites | Network configuration, per-site scope UI, language fields and analyzers, WPML and Polylang integration | Medium |
+| **P8 — Multisite and multilingual** ✅ | Networks and non-English sites | Network configuration, per-site scope UI, language fields and analyzers, WPML and Polylang integration | Medium |
 | **P9 — Cloud backend** | A second adapter proves the abstraction | Cloud adapter, sign-up and key management, privacy disclosure, migration between backends | High — a product, not a feature |
 | **P10 — Commercial ecosystem** | Add-ons and analytics | Add-on SDK, analytics add-on, semantic search exploration | Deliberately unplanned |
 
@@ -2469,6 +2469,74 @@ superglobal.
 document in the table that had never been written, and the reason is visible in
 hindsight: until there was a migration UX there was nothing to describe beyond
 the contract itself, which `docs/architecture.md` already covered.
+
+### 25.9 Phase 8 status — complete, 2026-09-20, shipped as 0.9.0
+
+Two halves that share one property: both were designed in Phase 0 and built here.
+Writing `se_i_site` on every document and injecting it into every query — on a
+single-site install where it is always 1 — is what made the network topology a
+collection name rather than a rewrite, and declaring `se_s_lang` in the contract
+before anything wrote it is what made the language field free to start using.
+399 unit tests pass, alongside coding standards, static analysis and the version
+check.
+
+| Deliverable | State |
+| --- | --- |
+| Network configuration | Done. `Multisite\NetworkConfig`, read through `Config` as a default or a pin; `Admin\NetworkScreen`; network-wide credentials |
+| Per-site scope UI | Done. `Multisite\SiteScope`, opt-in per site, and a notice on a site that is off |
+| Language fields | Done. `se_s_lang` on every document, normalised through `Language\LanguageTag` |
+| Analyzers | Done. `Schema\LanguageFields`, twenty-four `text_<lang>` types in the shipped configset, per-language analysed fields gated on detection |
+| WPML and Polylang | Done, through `Contracts\LanguageProvider` and each plugin's own public API |
+| Network-wide CLI | Done. `wp solrengine network`, one site at a time in a separate process, with an optional pause |
+| Network-wide search (§20) | Not built, and documented as not built. See below |
+
+**The per-language field naming looks wrong until you try the obvious version.**
+`se_txt_en_title` is the spelling the rest of the conventions imply, and it is
+unusable: Solr matches dynamic patterns on a literal prefix, and `se_txt_*`
+matches `se_txt_en_title`. A site whose English pattern had not been applied yet
+would index English text into the language-neutral field type — silently, with no
+error, and with results that look almost right. The fields are therefore
+`se_txten_title`, with no separator, and a test asserts that no existing pattern
+can match one.
+
+**Copy fields cannot do this job, which is why the copy is in PHP.** A copyField
+is unconditional: `source="se_txt_title" dest="se_txten_title"` would run every
+document through an English stemmer, German ones included, producing terms nobody
+will ever search for. The copy has to depend on the document's own language,
+which only the document builder knows.
+
+**§10.3's rule for the language filter would have repeated Phase 6's mistake.**
+The obvious clause is `se_s_lang:de-DE`. Every document indexed before 0.9.0
+carries no language field at all, so that clause deletes the entire existing
+index from the results the moment somebody activates Polylang, and keeps doing so
+until a reindex finishes. The filter is written as "not (has a language that is
+not this one)" instead — the same inversion Phase 6 arrived at for catalogue
+visibility, and the second time this exact shape has been the right answer.
+
+**Two defects found and fixed, one of them in an earlier phase.**
+
+1. `RelevanceProfile` had no way to express "search this field in German too"
+   without a site's own boosts being overwritten — the analysed fields mirror the
+   neutral weights, so a field switched off had to stay off in every language.
+   Found while writing the qf extension, which would otherwise have made "do not
+   search the content" mean "do not search the content, except in German".
+2. `uninstall.php` removed six options and left five behind: the run state, the
+   rebuild state, the table version and the discovered custom-field list, three of
+   which Phase 7 had added without updating it. A reinstall would have found a
+   run apparently in progress.
+
+**§20 asks for network-wide search and this does not build it.** The data model
+supports it — the site filter is applied by the query builder, so removing it is a
+change in one place — but it needs decisions about permissions and result
+presentation that no two networks answer the same way, and a half-answer would
+be worse than the absence. Recorded in `docs/multisite.md` as not built, with
+what it would take.
+
+**Two documents were added that §24.1's table does not list**,
+`docs/multilingual.md` and `docs/multisite.md`. The table was written before
+either phase existed and folds both into "everyone"; in practice each has one
+audience — a site owner with translations, and a network administrator — and a
+document serving two serves neither.
 
 ---
 

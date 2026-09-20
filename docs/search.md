@@ -55,6 +55,9 @@ On a WooCommerce site, product SKUs and attribute values appear on the list as
 well. SolrEngine supplies a sensible weight for each the first time, and never
 overrules one you have set.
 
+On a multilingual site, searches are answered in the language the visitor is
+reading and text can be analysed per language. See [multilingual](multilingual.md).
+
 ## When nothing matches
 
 Three attempts, stopping at the first that finds something:

@@ -8,6 +8,7 @@
 namespace SolrEngine\Integration\WordPress;
 
 use SolrEngine\Contracts\SearchQuery;
+use SolrEngine\Language\Languages;
 use SolrEngine\Documents\IndexedTypes;
 use SolrEngine\Contracts\SearchResults;
 use SolrEngine\Search\FacetRegistry;
@@ -86,26 +87,36 @@ final class QueryIntegration {
 	private $last_results = null;
 
 	/**
+	 * The site's languages, or null when none are known.
+	 *
+	 * @var Languages|null
+	 */
+	private $languages;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param SearchService       $search  Search service.
-	 * @param Config              $config  Configuration.
-	 * @param int                 $site_id Site identifier.
-	 * @param FilterRegistry|null $filters Which filters may be applied.
-	 * @param FacetRegistry|null  $facets  Which facets may be counted.
+	 * @param SearchService       $search    Search service.
+	 * @param Config              $config    Configuration.
+	 * @param int                 $site_id   Site identifier.
+	 * @param FilterRegistry|null $filters   Which filters may be applied.
+	 * @param FacetRegistry|null  $facets    Which facets may be counted.
+	 * @param Languages|null      $languages The site's languages.
 	 */
 	public function __construct(
 		SearchService $search,
 		Config $config,
 		int $site_id,
 		?FilterRegistry $filters = null,
-		?FacetRegistry $facets = null
+		?FacetRegistry $facets = null,
+		?Languages $languages = null
 	) {
 		$this->search    = $search;
 		$this->config    = $config;
 		$this->site_id   = $site_id;
 		$this->filters   = $filters ?? FilterRegistry::defaults();
 		$this->selection = new FacetSelection( $facets ?? new FacetRegistry() );
+		$this->languages = $languages;
 	}
 
 	/**
@@ -240,6 +251,12 @@ final class QueryIntegration {
 
 		$search = new SearchQuery( (string) $query->get( 's' ), $this->site_id );
 
+		$language = $this->scoped_language();
+
+		if ( '' !== $language ) {
+			$search = $search->with_language( $language );
+		}
+
 		$post_types = $this->requested_post_types( $query );
 
 		if ( array() !== $post_types ) {
@@ -247,6 +264,32 @@ final class QueryIntegration {
 		}
 
 		return $this->with_selected_filters( $search )->with_pagination( $page, $per_page );
+	}
+
+	/**
+	 * The language this request's results should be restricted to.
+	 *
+	 * Empty on a monolingual site, and empty when a site has deliberately asked
+	 * for searches to span every language — which is a real thing to want on a
+	 * documentation site where the English page is the only one that exists.
+	 *
+	 * On a multilingual site the default is to scope, because a visitor reading
+	 * the German site and searching from the German header expects German
+	 * results, and handing them the English translation of the same page as a
+	 * separate hit is worse than not finding it.
+	 *
+	 * @return string BCP-47 tag, or an empty string for no restriction.
+	 */
+	private function scoped_language(): string {
+		if ( null === $this->languages || ! $this->languages->is_multilingual() ) {
+			return '';
+		}
+
+		if ( ! $this->config->get_bool( 'search.language_scope', true ) ) {
+			return '';
+		}
+
+		return $this->languages->current();
 	}
 
 	/**

@@ -71,6 +71,22 @@ final class SchemaPlanner {
 		}
 
 		foreach ( $contract->fields() as $field ) {
+			if ( ! $state->has_field_type( $field->type() ) ) {
+				// Caught here rather than at apply time. A contract may name a
+				// type outside the required set — a per-language analyser is one
+				// a site opted into — and the difference between a blocker and a
+				// failed apply is whether an administrator finds out before or
+				// after half the plan has been sent.
+				$blockers[] = sprintf(
+					/* translators: 1: field name, 2: Solr field type name. */
+					__( '"%1$s" needs the field type "%2$s", which this schema does not define. SolrEngine will not create field types. Apply the shipped configset, which defines the language analysers, or add the type yourself.', 'solrengine' ),
+					$field->name(),
+					$field->type()
+				);
+
+				continue;
+			}
+
 			$live = $field->is_dynamic()
 				? $state->dynamic_field( $field->name() )
 				: $state->field( $field->name() );

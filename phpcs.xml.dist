@@ -122,6 +122,16 @@
 		was found and fixed this way: check-version.php used $plugin, which is
 		a genuine WordPress global.
 	-->
+	<!--
+		Stub declarations exist to give static analysis a signature, so their
+		parameters are unused by definition. They are linted at all — rather
+		than excluded outright — because their docblocks and formatting still
+		have to be right for anyone reading them.
+	-->
+	<rule ref="Generic.CodeAnalysis.UnusedFunctionParameter">
+		<exclude-pattern>*/tests/stubs/*</exclude-pattern>
+	</rule>
+
 	<rule ref="WordPress.WP.AlternativeFunctions">
 		<exclude-pattern>*/tests/*</exclude-pattern>
 		<exclude-pattern>*/bin/*</exclude-pattern>

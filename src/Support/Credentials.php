@@ -37,6 +37,13 @@ final class Credentials {
 	public const OPTION = 'solrengine_credentials';
 
 	/**
+	 * Network option holding credentials shared by every site.
+	 *
+	 * @var string
+	 */
+	public const NETWORK_OPTION = 'solrengine_network_credentials';
+
+	/**
 	 * Constant that may hold the username.
 	 *
 	 * @var string
@@ -78,10 +85,14 @@ final class Credentials {
 			return 'constant';
 		}
 
-		$stored = get_option( self::OPTION, array() );
+		$stored = $this->stored( self::OPTION );
 
-		if ( is_array( $stored ) && ! empty( $stored['password'] ) ) {
+		if ( ! empty( $stored['password'] ) ) {
 			return 'option';
+		}
+
+		if ( ! empty( $this->stored( self::NETWORK_OPTION )['password'] ) ) {
+			return 'network';
 		}
 
 		return 'none';
@@ -116,9 +127,15 @@ final class Credentials {
 			}
 		}
 
-		$stored = get_option( self::OPTION, array() );
+		$stored = $this->stored( self::OPTION );
 
-		return is_array( $stored ) && isset( $stored['username'] ) ? (string) $stored['username'] : '';
+		if ( isset( $stored['username'] ) && '' !== (string) $stored['username'] ) {
+			return (string) $stored['username'];
+		}
+
+		$networked = $this->stored( self::NETWORK_OPTION );
+
+		return isset( $networked['username'] ) ? (string) $networked['username'] : '';
 	}
 
 	/**
@@ -141,13 +158,24 @@ final class Credentials {
 			return Result::success( $from_constant );
 		}
 
-		$stored = get_option( self::OPTION, array() );
+		$stored = $this->stored( self::OPTION );
 
-		if ( ! is_array( $stored ) || empty( $stored['password'] ) ) {
-			return Result::failure( 'not_configured', 'No password is configured.' );
+		if ( ! empty( $stored['password'] ) ) {
+			return $this->encryption->decrypt( (string) $stored['password'] );
 		}
 
-		return $this->encryption->decrypt( (string) $stored['password'] );
+		// Falling back to the network's copy, not merging with it. A site that
+		// has entered its own credentials means them; a site that has entered
+		// none uses the cluster's. The encryption key comes from the site salts
+		// in wp-config.php, which a network shares, so one encrypted value is
+		// readable from every site without re-encrypting it per site.
+		$networked = $this->stored( self::NETWORK_OPTION );
+
+		if ( ! empty( $networked['password'] ) ) {
+			return $this->encryption->decrypt( (string) $networked['password'] );
+		}
+
+		return Result::failure( 'not_configured', 'No password is configured.' );
 	}
 
 	/**
@@ -204,7 +232,81 @@ final class Credentials {
 	}
 
 	/**
+	 * Store credentials for every site in a network.
+	 *
+	 * Written once by a network administrator rather than typed into four
+	 * hundred settings screens. A site that stores its own still wins: the
+	 * network value is a fallback, not a pin, because one site in a network
+	 * legitimately talking to a different Solr is a smaller surprise than a site
+	 * whose password cannot be corrected from its own screen.
+	 *
+	 * @since 0.9.0
+	 *
+	 * @param string $username Username. May be empty.
+	 * @param string $password Password. May be empty to clear it.
+	 * @return Result
+	 */
+	public function store_for_network( string $username, string $password ): Result {
+		if ( ! is_multisite() ) {
+			return Result::failure( 'not_a_network', 'This is not a multisite network.' );
+		}
+
+		if ( defined( self::CONST_PASSWORD ) ) {
+			return Result::failure(
+				'pinned_by_constant',
+				'Credentials are set in wp-config.php and cannot be changed here.'
+			);
+		}
+
+		if ( '' === $password ) {
+			delete_site_option( self::NETWORK_OPTION );
+
+			return Result::success();
+		}
+
+		if ( ! $this->encryption->is_available() ) {
+			return Result::failure(
+				'encryption_unavailable',
+				'Credentials cannot be stored securely on this server. Set SOLRENGINE_SOLR_USER and SOLRENGINE_SOLR_PASSWORD in wp-config.php instead.'
+			);
+		}
+
+		$encrypted = $this->encryption->encrypt( $password );
+
+		if ( $encrypted->is_failure() ) {
+			return $encrypted;
+		}
+
+		$saved = update_site_option(
+			self::NETWORK_OPTION,
+			array(
+				'username' => $username,
+				'password' => $encrypted->value( '' ),
+			)
+		);
+
+		return $saved
+			? Result::success()
+			: Result::failure( 'not_saved', 'The credentials could not be written to the database.' );
+	}
+
+	/**
+	 * Whether the network has credentials of its own.
+	 *
+	 * @since 0.9.0
+	 *
+	 * @return bool
+	 */
+	public function has_network_password(): bool {
+		return ! empty( $this->stored( self::NETWORK_OPTION )['password'] );
+	}
+
+	/**
 	 * Remove stored credentials.
+	 *
+	 * Only this site's. A network administrator removes the network's from the
+	 * network screen, and a site clearing its own must not silently disarm every
+	 * other site in the network.
 	 *
 	 * @since 0.1.0
 	 *
@@ -212,6 +314,20 @@ final class Credentials {
 	 */
 	public function forget(): void {
 		delete_option( self::OPTION );
+	}
+
+	/**
+	 * Read one credential store, always as an array.
+	 *
+	 * @param string $option Option name.
+	 * @return array<string,mixed>
+	 */
+	private function stored( string $option ): array {
+		$value = self::NETWORK_OPTION === $option
+			? ( is_multisite() ? get_site_option( $option, array() ) : array() )
+			: get_option( $option, array() );
+
+		return is_array( $value ) ? $value : array();
 	}
 
 	/**
@@ -227,6 +343,8 @@ final class Credentials {
 				return __( 'Set in wp-config.php', 'solrengine' );
 			case 'option':
 				return __( 'Saved and encrypted', 'solrengine' );
+			case 'network':
+				return __( 'Set for the whole network', 'solrengine' );
 			default:
 				return __( 'Not configured', 'solrengine' );
 		}

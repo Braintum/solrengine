@@ -127,6 +127,38 @@ Each handler reads `$_POST` once, immediately after that nonce check, and passes
 the values on. Nothing below that point touches a superglobal, so there is no
 path by which a helper reads request data that was never verified.
 
+## Networks
+
+Two controls, and they do different jobs.
+
+**Per-site opt-in.** A site in a network does nothing until a network
+administrator switches it on. That is primarily an operational control — it stops
+four hundred sites indexing at once — but it is also the answer to a site
+administrator who should not be able to point their site at the network's Solr
+without anybody knowing.
+
+**Pinned settings.** A network administrator can lock the endpoint, the
+collection and the TLS and private-network options so a site administrator cannot
+change them. Without that, any site administrator in the network can aim the
+plugin at an address of their choosing, which is the SSRF surface described above
+with one more person able to reach it. A pinned value is reported as pinned on
+the site's own screen rather than silently discarding a save.
+
+A constant in `wp-config.php` still overrides a network pin, because the file on
+the server outranks the database in every case.
+
+**Network credentials** are encrypted with the keys in `wp-config.php`, which a
+network shares by definition, so one stored value is readable from every site.
+That is the property that makes them usable and it is also their limit: any site
+in the network can read them, so a network is a trust boundary and a compromised
+site administrator on any site has the Solr password. Where that is not
+acceptable, use `SOLRENGINE_SOLR_USER` and `SOLRENGINE_SOLR_PASSWORD` in
+`wp-config.php`, or give each site its own credentials.
+
+**Cross-site leakage under a shared collection** is covered below: `se_i_site` is
+injected by the query builder, never supplied by a caller, and never removable
+through a hook.
+
 ## Data exposure
 
 By default only publicly visible content is indexed. Drafts, private posts,

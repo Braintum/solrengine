@@ -7,7 +7,13 @@
 
 namespace SolrEngine\Admin;
 
+use SolrEngine\Backend\BackendRegistry;
+use SolrEngine\Contracts\SchemaPlan;
 use SolrEngine\Integration\WooCommerce\WooCommerce;
+use SolrEngine\Language\Languages;
+use SolrEngine\Language\LanguageTag;
+use SolrEngine\Schema\ContractRegistry;
+use SolrEngine\Schema\LanguageFields;
 use SolrEngine\Search\FacetRegistry;
 use SolrEngine\Search\RelevanceProfile;
 use SolrEngine\Search\RelevanceSettings;
@@ -63,14 +69,47 @@ final class SearchScreen extends Screen {
 	private $facets;
 
 	/**
+	 * The site's languages.
+	 *
+	 * @var Languages|null
+	 */
+	private $languages;
+
+	/**
+	 * Backend registry, for reading and changing the schema.
+	 *
+	 * @var BackendRegistry|null
+	 */
+	private $backends;
+
+	/**
+	 * Contract registry.
+	 *
+	 * @var ContractRegistry|null
+	 */
+	private $contracts;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param Config        $config Configuration.
-	 * @param FacetRegistry $facets Registered facets.
+	 * @param Config                $config    Configuration.
+	 * @param FacetRegistry         $facets    Registered facets.
+	 * @param Languages|null        $languages The site's languages.
+	 * @param BackendRegistry|null  $backends  Backend registry.
+	 * @param ContractRegistry|null $contracts Contract registry.
 	 */
-	public function __construct( Config $config, FacetRegistry $facets ) {
-		$this->config = $config;
-		$this->facets = $facets;
+	public function __construct(
+		Config $config,
+		FacetRegistry $facets,
+		?Languages $languages = null,
+		?BackendRegistry $backends = null,
+		?ContractRegistry $contracts = null
+	) {
+		$this->config    = $config;
+		$this->facets    = $facets;
+		$this->languages = $languages;
+		$this->backends  = $backends;
+		$this->contracts = $contracts;
 	}
 
 	/**
@@ -104,9 +143,18 @@ final class SearchScreen extends Screen {
 
 		// Read here, beside the nonce check that makes reading it legitimate,
 		// and narrowed to scalars before it goes anywhere near validation.
-		$settings = RelevanceSettings::from_input( self::submitted( (array) wp_unslash( $_POST ) ) );
+		$request = (array) wp_unslash( $_POST );
+
+		$settings = RelevanceSettings::from_input( self::submitted( $request ) );
 
 		$this->config->set( 'search.relevance', $settings->to_config() );
+
+		// Only written when the form offered it. A monolingual site's form has no
+		// such checkbox, and reading its absence as "switch scoping off" would
+		// silently change a setting nobody was shown.
+		if ( null !== $this->languages && $this->languages->is_multilingual() ) {
+			$this->config->set( 'search.language_scope', ! empty( $request['language_scope'] ) );
+		}
 
 		if ( ! $settings->is_clean() ) {
 			$this->back( 'partial', implode( ' ', $settings->problems() ) );
@@ -136,6 +184,61 @@ final class SearchScreen extends Screen {
 	}
 
 	/**
+	 * Enable or disable per-language analysis.
+	 *
+	 * Deliberately one action rather than a checkbox on the main form. Turning a
+	 * language on changes the Solr schema, and a schema change is not something to
+	 * bundle into a save that also adjusts a boost: it can fail, it needs its own
+	 * message when it does, and the setting must not be stored unless it worked.
+	 *
+	 * The order matters and is the whole reason this is a separate handler. The
+	 * field is added to the schema *first*, and the language is recorded only if
+	 * that succeeded — because the document builder trusts this setting, and a
+	 * language recorded without its field makes Solr reject every document the
+	 * site writes.
+	 *
+	 * @since 0.9.0
+	 *
+	 * @return void
+	 */
+	public function handle_languages(): void {
+		$this->require_manage();
+		check_admin_referer( self::ACTION . '_languages' );
+
+		$request = (array) wp_unslash( $_POST );
+		$wanted  = array();
+
+		foreach ( (array) ( $request['languages'] ?? array() ) as $subtag ) {
+			$primary = LanguageTag::primary( sanitize_text_field( (string) $subtag ) );
+
+			if ( '' !== $primary ) {
+				$wanted[ $primary ] = $primary;
+			}
+		}
+
+		$wanted = array_values( $wanted );
+
+		if ( array() === $wanted ) {
+			// Switching everything off needs no schema change. The patterns stay
+			// in the schema — SolrEngine never removes a field — and documents
+			// simply stop being written into them.
+			$this->config->set( 'index.analysed_languages', array() );
+
+			$this->back( 'languages_off' );
+		}
+
+		$applied = $this->apply_language_fields( $wanted );
+
+		if ( '' !== $applied ) {
+			$this->back( 'languages_failed', $applied );
+		}
+
+		$this->config->set( 'index.analysed_languages', $wanted );
+
+		$this->back( 'languages_on' );
+	}
+
+	/**
 	 * {@inheritDoc}
 	 *
 	 * @return void
@@ -161,9 +264,12 @@ final class SearchScreen extends Screen {
 			<?php
 			$this->render_notice(
 				array(
-					'saved'   => array( 'success', __( 'Relevance settings saved. They apply to the next search; no reindexing is needed.', 'solrengine' ) ),
-					'partial' => array( 'warning', __( 'Saved, with corrections:', 'solrengine' ) ),
-					'reset'   => array( 'success', __( 'Relevance settings are back to the shipped defaults.', 'solrengine' ) ),
+					'saved'            => array( 'success', __( 'Relevance settings saved. They apply to the next search; no reindexing is needed.', 'solrengine' ) ),
+					'partial'          => array( 'warning', __( 'Saved, with corrections:', 'solrengine' ) ),
+					'reset'            => array( 'success', __( 'Relevance settings are back to the shipped defaults.', 'solrengine' ) ),
+					'languages_on'     => array( 'success', __( 'Language analysis is on. Run a full index so existing content is analysed too.', 'solrengine' ) ),
+					'languages_off'    => array( 'success', __( 'Language analysis is off. Searches use the language-neutral fields.', 'solrengine' ) ),
+					'languages_failed' => array( 'error', __( 'Language analysis could not be switched on.', 'solrengine' ) ),
 				)
 			);
 			?>
@@ -248,6 +354,26 @@ final class SearchScreen extends Screen {
 					</td>
 				</tr>
 
+				<?php if ( null !== $this->languages && $this->languages->is_multilingual() ) : ?>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Languages', 'solrengine' ); ?></th>
+						<td>
+							<label>
+								<input
+									type="checkbox"
+									name="language_scope"
+									value="1"
+									<?php checked( $this->config->get_bool( 'search.language_scope', true ) ); ?>
+								/>
+								<?php esc_html_e( 'Only show results in the language the visitor is reading', 'solrengine' ); ?>
+							</label>
+							<p class="description">
+								<?php esc_html_e( 'On by default. A visitor searching from the German site expects German results, and handing them the English translation of the same page as a second hit is worse than not finding it. Switch it off on a site where most pages exist in one language only.', 'solrengine' ); ?>
+							</p>
+						</td>
+					</tr>
+				<?php endif; ?>
+
 				<tr>
 					<th scope="row"><?php esc_html_e( 'Newer content', 'solrengine' ); ?></th>
 					<td>
@@ -271,6 +397,8 @@ final class SearchScreen extends Screen {
 
 			</form>
 
+			<?php $this->render_language_section(); ?>
+
 			<?php $this->render_fallback_section(); ?>
 
 			<?php $this->render_filters_section(); ?>
@@ -282,6 +410,175 @@ final class SearchScreen extends Screen {
 			</form>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Render the per-language analysis section.
+	 *
+	 * Absent on a monolingual site. Analysing English content as English when
+	 * that is the only language there is buys nothing over the neutral analyser
+	 * that is already doing it, and a section offering one checkbox nobody should
+	 * tick is worse than no section.
+	 *
+	 * @return void
+	 */
+	private function render_language_section(): void {
+		if ( null === $this->languages || ! $this->languages->is_multilingual() ) {
+			return;
+		}
+
+		$provider = $this->languages->provider();
+
+		if ( null === $provider ) {
+			return;
+		}
+
+		$enabled   = array_map( 'strval', $this->config->get_array( 'index.analysed_languages', array() ) );
+		$available = $this->analysable();
+
+		?>
+		<h2><?php esc_html_e( 'Languages', 'solrengine' ); ?></h2>
+
+		<p>
+			<?php
+			printf(
+				/* translators: %s: name of the plugin providing languages. */
+				esc_html__( 'Languages are read from %s.', 'solrengine' ),
+				esc_html( $provider->label() )
+			);
+			?>
+			<?php esc_html_e( 'Searches are answered in the language the visitor is reading, and content in the other languages is left out of them.', 'solrengine' ); ?>
+		</p>
+
+		<h3><?php esc_html_e( 'Language-aware analysis', 'solrengine' ); ?></h3>
+
+		<p>
+			<?php esc_html_e( 'Text can be indexed a second time through an analyser that knows the language, so a German search for "Häuser" finds "Haus" and an English search for "running" finds "run". Without it, a search matches only the words as they are written.', 'solrengine' ); ?>
+		</p>
+
+		<?php if ( array() === $available ) : ?>
+			<p>
+				<?php esc_html_e( 'Your Solr does not define an analyser for any of this site\'s languages, and SolrEngine will not create one: an analyser is a much larger commitment than a field, and a wrong one is not recoverable by adding another. Apply the configset SolrEngine ships, which defines two dozen of them, and this list will fill in. Content is indexed and searchable either way.', 'solrengine' ); ?>
+			</p>
+
+			<?php return; ?>
+		<?php endif; ?>
+
+		<?php $this->open_form( self::ACTION . '_languages' ); ?>
+
+		<?php foreach ( $available as $subtag => $label ) : ?>
+			<p style="margin:.2em 0">
+				<label>
+					<input
+						type="checkbox"
+						name="languages[]"
+						value="<?php echo esc_attr( (string) $subtag ); ?>"
+						<?php checked( in_array( (string) $subtag, $enabled, true ) ); ?>
+					/>
+					<?php echo esc_html( $label ); ?>
+					<code><?php echo esc_html( LanguageTag::field_type( (string) $subtag ) ); ?></code>
+				</label>
+			</p>
+		<?php endforeach; ?>
+
+		<p class="description">
+			<?php esc_html_e( 'Switching one on adds a field to your Solr schema. Existing content is not re-analysed by a schema change, so run a full index afterwards.', 'solrengine' ); ?>
+		</p>
+
+		<?php submit_button( __( 'Save language analysis', 'solrengine' ), 'secondary', 'submit', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * The site's languages whose analyser this Solr actually has.
+	 *
+	 * @return array<string,string> Label keyed by primary subtag.
+	 */
+	private function analysable(): array {
+		if ( null === $this->languages || null === $this->backends ) {
+			return array();
+		}
+
+		$schema = $this->backends->schema();
+
+		if ( null === $schema ) {
+			return array();
+		}
+
+		$state = $schema->describe();
+
+		if ( $state->is_failure() ) {
+			return array();
+		}
+
+		$supported = LanguageFields::available( $state->value(), $this->languages->primary_subtags() );
+		$labels    = array();
+
+		foreach ( $this->languages->all() as $tag => $label ) {
+			$primary = LanguageTag::primary( (string) $tag );
+
+			if ( '' === $primary || ! in_array( $primary, $supported, true ) ) {
+				continue;
+			}
+
+			// Keyed by subtag, so pt-BR and pt-PT collapse onto one Portuguese
+			// entry: they share an analyser, and offering the choice twice would
+			// imply they could be switched on separately.
+			$labels[ $primary ] = isset( $labels[ $primary ] )
+				? $labels[ $primary ] . ', ' . (string) $label
+				: (string) $label;
+		}
+
+		return $labels;
+	}
+
+	/**
+	 * Add the analysed fields for a set of subtags to the schema.
+	 *
+	 * @param string[] $subtags Primary subtags.
+	 * @return string An error message, or an empty string on success.
+	 */
+	private function apply_language_fields( array $subtags ): string {
+		if ( null === $this->backends || null === $this->contracts ) {
+			return __( 'Solr is not reachable.', 'solrengine' );
+		}
+
+		$schema = $this->backends->schema();
+
+		if ( null === $schema ) {
+			return __( 'Solr is not reachable.', 'solrengine' );
+		}
+
+		// A contract built for the languages being asked for, not the ones
+		// already configured. The registry this screen was handed carries the
+		// current set, and planning against that would produce an empty plan and
+		// report success without adding anything.
+		$planned = $schema->plan( ( new ContractRegistry( $subtags ) )->current() );
+
+		if ( $planned->is_failure() ) {
+			return $planned->message();
+		}
+
+		$plan = $planned->value();
+
+		if ( ! $plan instanceof SchemaPlan ) {
+			return __( 'The schema could not be read.', 'solrengine' );
+		}
+
+		if ( $plan->is_empty() ) {
+			// Already there, from a previous attempt or from the shipped
+			// configset. Nothing to do and nothing wrong.
+			return '';
+		}
+
+		if ( array() !== $plan->blockers() ) {
+			return implode( ' ', $plan->blockers() );
+		}
+
+		$applied = $schema->apply( $plan );
+
+		return $applied->is_failure() ? $applied->message() : '';
 	}
 
 	/**

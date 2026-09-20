@@ -10,6 +10,7 @@ namespace SolrEngine\Admin;
 use SolrEngine\Diagnostics\ConnectionDiagnostic;
 use SolrEngine\Diagnostics\DiagnosticReport;
 use SolrEngine\Integration\WooCommerce\WooCommerce;
+use SolrEngine\Multisite\SiteScope;
 use SolrEngine\Schema\AppliedSchema;
 use SolrEngine\Support\Config;
 use SolrEngine\Support\Credentials;
@@ -70,20 +71,30 @@ final class ConnectionScreen extends Screen {
 	private $diagnostic;
 
 	/**
+	 * This site's place in a network, or null on a single site.
+	 *
+	 * @var SiteScope|null
+	 */
+	private $scope;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Config               $config      Configuration.
 	 * @param Credentials          $credentials Credential store.
 	 * @param ConnectionDiagnostic $diagnostic  Connection diagnostic.
+	 * @param SiteScope|null       $scope       This site's place in a network.
 	 */
 	public function __construct(
 		Config $config,
 		Credentials $credentials,
-		ConnectionDiagnostic $diagnostic
+		ConnectionDiagnostic $diagnostic,
+		?SiteScope $scope = null
 	) {
 		$this->config      = $config;
 		$this->credentials = $credentials;
 		$this->diagnostic  = $diagnostic;
+		$this->scope       = $scope;
 	}
 
 	/**
@@ -255,9 +266,7 @@ final class ConnectionScreen extends Screen {
 							/>
 							<p class="description">
 								<?php esc_html_e( 'The base address of your Solr server, ending in /solr. A collection name pasted here is ignored; enter it in the next field.', 'solrengine' ); ?>
-								<?php if ( $this->config->is_locked( 'connection.endpoint' ) ) : ?>
-									<br/><strong><?php esc_html_e( 'Set in wp-config.php.', 'solrengine' ); ?></strong>
-								<?php endif; ?>
+								<?php $this->render_lock_note( 'connection.endpoint' ); ?>
 							</p>
 						</td>
 					</tr>
@@ -274,10 +283,23 @@ final class ConnectionScreen extends Screen {
 								class="regular-text code"
 								value="<?php echo esc_attr( $collection ); ?>"
 								placeholder="wordpress"
-								<?php disabled( $this->config->is_locked( 'connection.collection' ) ); ?>
+								<?php disabled( $this->config->is_locked( 'connection.collection' ) || ( null !== $this->scope && $this->scope->collection_is_derived() ) ); ?>
 							/>
 							<p class="description">
 								<?php esc_html_e( 'SolrEngine does not create this for you. Create it on your Solr server first.', 'solrengine' ); ?>
+								<?php $this->render_lock_note( 'connection.collection' ); ?>
+								<?php if ( null !== $this->scope && $this->scope->collection_is_derived() ) : ?>
+									<br/>
+									<strong>
+										<?php
+										printf(
+											/* translators: %s: collection name. */
+											esc_html__( 'This site uses %s, from the network\'s naming pattern. The field above is ignored.', 'solrengine' ),
+											'<code>' . esc_html( $this->scope->collection() ) . '</code>'
+										);
+										?>
+									</strong>
+								<?php endif; ?>
 							</p>
 						</td>
 					</tr>
@@ -310,6 +332,11 @@ final class ConnectionScreen extends Screen {
 									<?php esc_html_e( 'This is the most secure option. Credentials defined there are never written to the database.', 'solrengine' ); ?>
 								</p>
 							<?php else : ?>
+								<?php if ( 'network' === $this->credentials->source() ) : ?>
+									<p class="description">
+										<?php esc_html_e( 'This site is using the credentials set for the whole network. Enter a password here only if this site talks to a different Solr.', 'solrengine' ); ?>
+									</p>
+								<?php endif; ?>
 								<input
 									type="password"
 									id="solrengine-password"
@@ -448,6 +475,28 @@ final class ConnectionScreen extends Screen {
 			<?php endif; ?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Explain why a field cannot be edited, when it cannot.
+	 *
+	 * Two answers, and they send an administrator to completely different
+	 * places: a constant is in a file on this server, and a network pin is a
+	 * checkbox somebody else ticked. Saying the wrong one wastes an afternoon.
+	 *
+	 * @param string $path Configuration dot path.
+	 * @return void
+	 */
+	private function render_lock_note( string $path ): void {
+		switch ( $this->config->lock_source( $path ) ) {
+			case 'constant':
+				echo '<br/><strong>' . esc_html__( 'Set in wp-config.php.', 'solrengine' ) . '</strong>';
+				break;
+
+			case 'network':
+				echo '<br/><strong>' . esc_html__( 'Set for the whole network, and locked. A network administrator can change it under Network Admin, Settings, SolrEngine.', 'solrengine' ) . '</strong>';
+				break;
+		}
 	}
 
 	/**

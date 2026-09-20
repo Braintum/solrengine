@@ -35,11 +35,24 @@ function solrengine_uninstall_site() {
 		'solrengine_state',
 		'solrengine_version',
 		'solrengine_installed_at',
+		'solrengine_db_version',
+		'solrengine_meta_keys',
+		// Run state. Each is written by a different part of the indexing
+		// pipeline, and each would otherwise survive the plugin's removal and
+		// confuse a later reinstall into thinking a run was in progress.
+		'solrengine_sync_run',
+		'solrengine_sync_run_rebuild',
+		'solrengine_rebuild',
+		'solrengine_reconciliation',
 	);
 
 	foreach ( $options as $option ) {
 		delete_option( $option );
 	}
+
+	// The discovered meta-key list is a transient rather than an option, and
+	// transients are stored as options with a prefix, so it needs naming twice.
+	delete_transient( 'solrengine_meta_keys' );
 
 	// Legacy 0.1.0 prototype options.
 	delete_option( 'solrengine_settings' );
@@ -76,6 +89,7 @@ if ( is_multisite() ) {
 
 	delete_site_option( 'solrengine_network_connection' );
 	delete_site_option( 'solrengine_network_state' );
+	delete_site_option( 'solrengine_network_credentials' );
 } else {
 	solrengine_uninstall_site();
 }

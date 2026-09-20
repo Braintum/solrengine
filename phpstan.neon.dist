@@ -24,6 +24,11 @@ parameters:
         # everywhere else. Its classes are therefore never autoloadable during
         # analysis, and every call into them has to be guarded at runtime.
         - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
+        # Polylang, for the same reason: an optional integration whose functions
+        # are never autoloadable during analysis. Hand-written rather than from a
+        # stub package, because no maintained one covers it. WPML needs nothing
+        # here, being reached entirely through apply_filters().
+        - tests/stubs/multilingual.php
 
     bootstrapFiles:
         - tests/phpstan-bootstrap.php

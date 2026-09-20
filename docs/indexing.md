@@ -193,6 +193,12 @@ Custom tables rather than options, deliberately. A log is exactly the shape that
 grows without bound, and an autoloaded option that grows without bound is one of
 the most common causes of WordPress performance collapse.
 
+## Networks
+
+Every site in a network indexes into its own collection, or into one shared
+collection filtered by site. Nothing is indexed on a site until a network
+administrator switches it on. See [multisite](multisite.md).
+
 ## The queue
 
 Action Scheduler is used when it is available, which is the case on every

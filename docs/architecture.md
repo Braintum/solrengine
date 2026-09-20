@@ -36,6 +36,7 @@ src/Contracts/               Public API
   IndexBackend               Writes
   SchemaBackend              Inspects and, where permitted, changes the schema
   LifecycleBackend           Builds a replacement index and switches to it
+  LanguageProvider           Where a site's languages come from
   JobQueue                   Defers work
   Logger                     Records what happened
 src/Support/
@@ -45,6 +46,8 @@ src/Support/
   Encryption                 Sodium, keyed from the site salts
   NullLogger / DebugLogger
 src/Backend/BackendRegistry  Which backends exist, which is selected
+src/Language/                Language tags, and the site's languages
+src/Multisite/               Network configuration and this site's scope
 ```
 
 Nothing connects to Solr yet. That is Phase 1.
@@ -78,6 +81,7 @@ never searches and never saves a post pays for `Bootstrap` and nothing else.
 | `solrengine_suggest_query` | filter | The autocomplete query before it reaches the backend |
 | `solrengine_full_sync_complete` | action | A full run finished. Receives the run state; a run with a `target` was building a replacement index rather than the live one |
 | `solrengine_rebuild_switched` | action | Searches are now answered by a rebuilt index. Receives the index name and the rebuild state |
+| `solrengine_language_provider` | filter | Supply a LanguageProvider for a multilingual plugin SolrEngine does not know about |
 
 More arrive with the phases that need them. The plan's section 11.3 lists the
 intended set; each one is public API from 1.0 and needs a test and a docblock

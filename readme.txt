@@ -4,7 +4,7 @@ Tags: search, solr, relevance, faceted search, woocommerce
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.8.0
+Stable tag: 0.9.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -200,6 +200,32 @@ the same list.
 
 == Changelog ==
 
+= 0.9.0 =
+* Multilingual sites. SolrEngine reads languages from WPML or Polylang, records
+  the language of every post, and answers a search in the language the visitor
+  is reading. A site with no multilingual plugin is unaffected.
+* Language-aware analysis. Text can be indexed a second time through an
+  analyser that knows the language, so a German search for "Häuser" finds
+  "Haus" and an English one for "running" finds "run". Switch a language on
+  under SolrEngine, Search.
+* The shipped Solr configset now defines analysers for twenty-four languages.
+* A language filter and a language facet appear on multilingual sites, so a
+  visitor can widen a search to another language and a theme can build a
+  language switcher over the search results.
+* Multisite. A network administrator sets the Solr connection once under
+  Network Admin, Settings, SolrEngine, and can lock any of it so individual
+  sites cannot change it. Credentials are stored once for the whole network.
+* Sites are off until switched on. Activating SolrEngine across a network does
+  nothing until a network administrator enables each site, so four hundred
+  sites cannot start four hundred indexes at once.
+* Choose one collection per site or one shared collection for the network.
+  Results never cross between sites either way.
+* New command: "wp solrengine network" to see, switch on, index and migrate
+  sites across a network, one at a time and with an optional pause between
+  them.
+* Fixed: uninstalling did not remove the run state, the rebuild state or the
+  discovered custom-field list.
+
 = 0.8.0 =
 * A Content screen. Choose which post types are indexed, and map custom fields
   into the index by picking from the fields your site already uses. The index
@@ -350,6 +376,11 @@ the same list.
 * Coding standards, static analysis and test tooling.
 
 == Upgrade Notice ==
+
+= 0.9.0 =
+Adds multilingual and multisite support. On a multilingual site, run a full
+index so every post records its language. On a network, switch each site on
+under Network Admin before it will index.
 
 = 0.8.0 =
 Adds screens for indexed content, relevance and tools, and a way to rebuild the

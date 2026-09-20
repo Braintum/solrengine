@@ -8,6 +8,7 @@
 namespace SolrEngine\Documents;
 
 use SolrEngine\Contracts\FieldType;
+use SolrEngine\Language\LanguageTag;
 
 /**
  * The names SolrEngine writes, and the rules for coercing values into them.
@@ -112,6 +113,27 @@ final class DocumentFields {
 	 */
 	public static function meta( string $type, string $key ): string {
 		return FieldType::field( $type, 'meta_' . self::sanitise( $key ) );
+	}
+
+	/**
+	 * A language-analysed field name.
+	 *
+	 * The same text as the neutral field beside it, indexed a second time through
+	 * an analyser that knows the language: an English analyser stems "running" to
+	 * "run", a German one splits compounds, and neither is something the
+	 * language-neutral analyser can do, because it has to work for every site.
+	 *
+	 * @since 0.9.0
+	 *
+	 * @param string $tag  BCP-47 tag or locale.
+	 * @param string $name Logical name, for example "title".
+	 * @return string Field name, for example "se_txten_title". Empty when the
+	 *                language is not one SolrEngine recognises.
+	 */
+	public static function analysed( string $tag, string $name ): string {
+		$prefix = LanguageTag::field_prefix( $tag );
+
+		return '' === $prefix ? '' : 'se_' . $prefix . '_' . self::sanitise( $name );
 	}
 
 	/**

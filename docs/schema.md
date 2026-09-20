@@ -33,6 +33,12 @@ needs **no schema change at all**. Their fields land in a pattern that is alread
 there. Three named fields are declared explicitly — `se_all`, `se_taxterms` and
 `se_suggest` — because each has a job a generic pattern would not describe.
 
+On a multilingual site, one more pattern per language you switch analysis on
+for — `se_txten_*`, `se_txtde_*` — each using that language's analyser. See
+[multilingual](multilingual.md). Note the missing separator: `se_txt_*` would
+match `se_txt_en_title`, so a per-language field spelled that way would land
+silently in the language-neutral field type whenever its own pattern was absent.
+
 Every name begins with `se_`. SolrEngine reads, plans against and writes nothing
 outside that namespace, so it can share a collection with another application.
 
@@ -114,6 +120,17 @@ The two non-additive rows are what [the rebuild](indexing.md#building-a-replacem
 exists for.
 
 ## Analysers
+
+The shipped configset defines a `text_<language>` field type for twenty-four
+languages, used by the per-language fields above. Each normalises and stems and
+nothing more: Solr's own language configsets reference a stopword file such as
+`lang/stopwords_de.txt`, and a schema referencing a file that is not there does
+not degrade — the core fails to load. Rather than ship two dozen third-party word
+lists, SolrEngine ships the stemming, which is the larger half of the benefit.
+
+Languages needing a Solr module that is not loaded by default — Japanese,
+Chinese, Korean, Thai — are absent rather than half-configured, for the same
+reason.
 
 Stemming, stopwords and synonyms are not settings. They are analyser
 configuration, they live in the shipped configset, and changing one invalidates
