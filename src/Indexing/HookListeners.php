@@ -298,16 +298,17 @@ final class HookListeners {
 	 * @return bool
 	 */
 	private function is_eligible( string $post_type ): bool {
-		/**
-		 * Filters which post types are eligible for indexing.
-		 *
-		 * @since 0.3.0
-		 *
-		 * @param string[] $post_types Configured post types.
-		 */
-		$types = apply_filters( 'solrengine_indexable_post_types', $this->post_types );
-
-		return in_array( $post_type, (array) $types, true );
+		// The list is trusted as given, and deliberately not filtered again here.
+		// It arrives from IndexedTypes::all(), which is the one place the
+		// solrengine_indexable_post_types filter is applied — the single source
+		// Phase 6 reduced this question to after two copies of it had let content
+		// reach the index on save and vanish on the next full sync.
+		//
+		// Re-applying the filter here made that one place two again. It was
+		// harmless for an idempotent filter and wrong for any other: a filter
+		// that appends a post type appended it twice, and one that counts or
+		// logs ran on every save of every post.
+		return in_array( $post_type, $this->post_types, true );
 	}
 
 	/**

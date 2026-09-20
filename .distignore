@@ -34,6 +34,10 @@ phpunit.xml.dist
 tests
 bin
 docs
+# The developer-facing readme, which is a table of contents for docs/ — excluded
+# just above. Shipping it would put a page of dead links in the package.
+# readme.txt is the one users and the directory read, and that does ship.
+README.md
 assets/src
 assets/README.md
 node_modules

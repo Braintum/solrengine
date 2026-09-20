@@ -33,6 +33,13 @@ jobs:
       - name: Versions agree across header, constant and readme
         run: php bin/check-version.php
 
+      # Generated from the docblocks above each hook, so it cannot drift from
+      # them. This step also fails when a hook has no docblock, no @since, or
+      # documents a different number of parameters than it passes — hooks are
+      # public API from 1.0, and an undocumented one has no contract.
+      - name: Hook reference is current and hooks are documented
+        run: php bin/generate-hooks.php --check
+
       - name: Coding standards
         run: vendor/bin/phpcs --report=full
 

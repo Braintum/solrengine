@@ -44,10 +44,12 @@
 		"analyse": "phpstan analyse",
 		"test": "phpunit --testsuite unit",
 		"test:integration": "phpunit --testsuite integration",
+		"hooks": "php bin/generate-hooks.php",
 		"check": [
 			"@lint",
 			"@analyse",
-			"@test"
+			"@test",
+			"php bin/generate-hooks.php --check"
 		]
 	},
 	"scripts-descriptions": {
@@ -56,6 +58,7 @@
 		"analyse": "Run PHPStan static analysis.",
 		"test": "Run the unit test suite (no WordPress or Solr required).",
 		"test:integration": "Run the WordPress integration test suite.",
-		"check": "Run lint, static analysis and unit tests."
+		"hooks": "Regenerate docs/hooks.md from the docblocks above each hook.",
+		"check": "Run lint, static analysis, unit tests and the hook reference check."
 	}
 }

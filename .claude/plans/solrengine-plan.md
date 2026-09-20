@@ -1964,7 +1964,7 @@ Each phase ends in something demonstrable. No phase is "refactoring".
 | **P1 — Connection and schema** ✅ | Admin connects to Solr and sees an honest diagnosis | Endpoint validator, HTTP transport, auth, version and mode detection, connection test, schema contract v1, shipped configset, schema comparison and confirmed apply | Medium — §18.1, Solr version variance |
 | **P2 — Indexing** ✅ | Content reliably reaches Solr and stays correct | Document model, field map, meta allowlist, dirty-set coalescing, job queue, full sync with cursor and resume, incremental sync including deletes, failure handling, reconciliation, WP-CLI | **High — the hardest phase** |
 | **P3 — Search** ✅ | WordPress search is Solr-powered, and safe when it is not | `QueryIntegration`, relevance profile, injection-safe query construction, fallback, REST `search` and `status`, admin dashboard | Medium |
-| **→ v1.0 to WordPress.org** | | Security review, Plugin Check clean, documentation, disclosure of external services | |
+| **→ v1.0 to WordPress.org** ◐ | | Security review, Plugin Check clean, documentation, disclosure of external services. **Status in §25.11** | |
 | **P4 — Suggest and instant search** ✅ | Autocomplete in the theme's search box | Suggester configuration and scheduled build, `suggest` endpoint, accessible front-end component, caching | Medium — §19.4 |
 | **P5 — Facets** ✅ | Generic faceted search | Facet registry, JSON Facet translation, multi-select, hierarchical taxonomy facets, `facets` endpoint, filter blocks and shortcodes | Medium |
 | **P6 — WooCommerce** ✅ | Fast product search and catalogue filtering | Product and variation mapping, visibility rules, price and attribute facets, Product Collection block integration, classic shop loop integration | **High — §15.4, §15.6** |
@@ -2607,6 +2607,66 @@ to a managed schema, and there is a conformance suite waiting for it. What remai
 is not plugin work — it is Q8, Q9, a running service, and the disclosure
 obligations §21.3 lists, which `docs/privacy.md` now records in advance so they
 are not decided under pressure.
+
+### 25.11 v1.0 release gate status — documentation complete, 2026-09-20, shipped as 0.10.1
+
+The gate sits after P3 in the table above and was skipped when the roadmap
+continued into P4. It is now the only thing between the plugin and the directory.
+Two of its four items are done.
+
+| Item | State |
+| --- | --- |
+| Documentation | **Done.** The four missing documents written, plus the `README.md` §24 asks for |
+| Disclosure of external services | **Done** since P0, and still accurate: SolrEngine contacts one service, the one the administrator configured |
+| Plugin Check clean | Wired into CI and blocking since P0, per Appendix A17. Never actually run |
+| Security review | Not run |
+
+**The hook reference is generated, which §24.1 required and nobody had built.**
+`bin/generate-hooks.php` writes `docs/hooks.md` from the docblock above each hook,
+tokenising rather than matching with a regular expression — a hook name appears in
+strings and in comments, and only a tokeniser can tell those from a call or find
+the docblock attached to one.
+
+Its more useful half is that it refuses. A hook with no docblock, no `@since`, or
+a docblock describing a different number of parameters than the call passes fails
+the build. That last check is the one worth having: a hook documenting two
+parameters while passing three is worse than one documenting none, because a
+reader trusts it and writes the wrong signature. `composer check` and CI both run
+it with `--check`.
+
+**It found two things on first run.**
+
+1. `solrengine_run_full_sync_batch` was reported as undocumented because the first
+   version of the check demanded an `@param` from every hook. The hook is correct
+   and the check was wrong — a no-argument action has nothing to document — so the
+   rule became "the docblock must describe what the call actually passes", which
+   is both weaker and far more useful.
+2. `solrengine_indexable_post_types` was fired from **two** places:
+   `IndexedTypes::all()` and `HookListeners::is_eligible()`. Since Bootstrap
+   constructs the listeners with `IndexedTypes::all()`, the filter was being
+   applied twice to an already-filtered value — harmless for an idempotent filter,
+   and wrong for any other: one that appends a post type appended it twice, and one
+   that counts or logs ran on every save of every post. It was also the second copy
+   of the question Phase 6 reduced to one place after two copies had let content
+   reach the index on save and vanish on the next full sync. The listeners now
+   trust the list they are given.
+
+**Two deviations from §24.1's table, both recorded rather than quietly made.**
+`docs/privacy.md` is dated P1 there and was written in P9, which is when there was
+anything to say beyond the contract itself. And §16.5 sketches a search response
+envelope carrying `"backend": "solr"`; the implementation omits it, and
+`docs/rest-api.md` documents the omission as deliberate — telling an anonymous
+caller which search engine a site runs is the same category of disclosure as an
+error message echoing an internal host name, which §18 is careful to avoid. The
+authenticated `status` endpoint reports it.
+
+**One inconsistency left alone.** ADR-011 says CI runs PHP 8.5; `ci.yml` runs 8.4.
+`docs/compatibility.md` documents what CI actually does, because a compatibility
+document that describes an intention is worse than none.
+
+**What remains.** Plugin Check and the security review, in that order, both against
+the finished state rather than a moving one. Neither is a code change until it
+finds something.
 
 ---
 

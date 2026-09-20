@@ -4,7 +4,7 @@ Tags: search, solr, relevance, faceted search, woocommerce
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.10.0
+Stable tag: 0.10.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -213,6 +213,15 @@ the same list.
 
 == Changelog ==
 
+= 0.10.1 =
+* Documentation. Full references for the REST API, the command line, every hook,
+  and the supported versions and bundled licences.
+* The hook reference is generated from the code, so it cannot drift from it, and
+  a hook that is undocumented now fails the build.
+* Fixed: the solrengine_indexable_post_types filter ran twice when a post was
+  saved. A filter that added a post type added it twice, and one that counted or
+  logged ran on every save.
+
 = 0.10.0 =
 * SolrEngine can now use more than one kind of search backend, chosen from a
   dropdown on the connection screen when more than one is available. Each
@@ -409,6 +418,9 @@ the same list.
 * Coding standards, static analysis and test tooling.
 
 == Upgrade Notice ==
+
+= 0.10.1 =
+Documentation and one fix. No action needed.
 
 = 0.10.0 =
 No action needed. Adds backend selection and a safe path for moving between
