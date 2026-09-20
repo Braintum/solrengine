@@ -98,14 +98,26 @@ final class Container {
 		}
 
 		if ( ! isset( $this->factories[ $id ] ) ) {
+			// esc_html() on a service identifier is the identity function: every
+			// id in this plugin is lower-case letters, digits and dots, supplied
+			// by our own code and never by a request. It is here because Plugin
+			// Check treats an unescaped variable in an exception message as a
+			// blocking error and does not read this project's PHPCS ruleset,
+			// which excludes that sniff.
+			//
+			// The exclusion still stands for the general case, and the reasoning
+			// in phpcs.xml.dist is unchanged: escaping an exception message that
+			// carries text from a server mangles it for whoever has to read it.
+			// This is the one place where the value being escaped provably
+			// cannot change, so satisfying the gate costs nothing.
 			throw new RuntimeException(
-				sprintf( 'SolrEngine: no service registered for "%s".', $id )
+				sprintf( 'SolrEngine: no service registered for "%s".', esc_html( $id ) )
 			);
 		}
 
 		if ( isset( $this->resolving[ $id ] ) ) {
 			throw new RuntimeException(
-				sprintf( 'SolrEngine: circular dependency while resolving "%s".', $id )
+				sprintf( 'SolrEngine: circular dependency while resolving "%s".', esc_html( $id ) )
 			);
 		}
 

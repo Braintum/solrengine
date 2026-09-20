@@ -776,7 +776,11 @@ final class Bootstrap {
 	private function register_hooks(): void {
 		$container = $this->container;
 
-		add_action( 'init', array( $this, 'load_textdomain' ) );
+		// No load_plugin_textdomain() call. WordPress has loaded a plugin's
+		// translations on demand since 4.6, reading the Domain Path header for
+		// where to look, and the floor here is 6.5. Calling it is discouraged,
+		// Plugin Check says so, and on a directory-hosted plugin it does nothing
+		// that would not have happened anyway.
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			// Before the opt-in gate, deliberately. "wp solrengine network enable"
@@ -1020,23 +1024,6 @@ final class Bootstrap {
 		if ( is_multisite() ) {
 			\WP_CLI::add_command( 'solrengine network', array( $commands, 'network' ) );
 		}
-	}
-
-	/**
-	 * Load the translation files.
-	 *
-	 * On init rather than plugins_loaded, per current WordPress guidance.
-	 *
-	 * @since 0.1.0
-	 *
-	 * @return void
-	 */
-	public function load_textdomain(): void {
-		load_plugin_textdomain(
-			'solrengine',
-			false,
-			dirname( plugin_basename( SOLRENGINE_PLUGIN_FILE ) ) . '/languages'
-		);
 	}
 
 	/**

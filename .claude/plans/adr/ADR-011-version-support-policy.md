@@ -81,3 +81,52 @@ Each floor is pinned to something external and defensible rather than to prefere
 current WordPress requires, Solr to what upstream still supports, WooCommerce to what its own team
 ships. That makes the policy explainable to users, stable against internal debate, and
 automatically revisable when the external fact changes.
+
+## Addendum, 2026-09-20 — the floor has to be pinned, not just declared
+
+**Status:** the policy is unchanged. PHP 7.4 remains the floor. What changed is
+that the repository now enforces it rather than asserting it.
+
+### The failure
+
+CI's PHP 7.4 job began failing with "your lock file does not contain a compatible
+set of packages". Nothing about the plugin had changed. `composer.lock` had been
+re-resolved on a PHP 8 machine, and Composer had therefore selected
+`doctrine/instantiator` 2.x and `myclabs/deep-copy` 1.14 — both of which require
+PHP 8 — as transitive dependencies of PHPUnit.
+
+Two things are worth separating, because the error message conflates them:
+
+- **No runtime dependency excluded 7.4.** The plugin still ran there. Only the
+  test tooling could not be installed.
+- **The declared floor was therefore untested**, which is the part that matters. A
+  supported version nothing runs against is a claim, not a support commitment.
+
+### The fix
+
+`config.platform.php` in `composer.json`, set to the floor. Composer then resolves
+as though it were running on 7.4 regardless of the machine, and the lock file is
+installable everywhere the plugin claims to run. Two packages downgraded; PHPUnit
+itself did not move.
+
+It is also self-enforcing: the next `composer update`, on any machine, produces a
+lock that still installs on 7.4. The previous arrangement depended on whoever ran
+it remembering, which is not an arrangement.
+
+A second benefit falls out. `composer install --no-dev` at release time resolves
+against the floor too, so the shipped `vendor/` is correct by construction rather
+than because the build machine happened to be old enough.
+
+### The decision that was reconsidered and kept
+
+Dropping 7.4 was considered, on the reasonable ground that it has had no security
+support since November 2022. It was kept, because the reason for the floor was
+never that PHP supports 7.4 — it is that **WooCommerce does**. WooCommerce 11.1.1
+declares `Requires PHP: 7.4`, so a store on 7.4 can install WooCommerce today and
+would not be able to install SolrEngine. That is the wrong way round for a plugin
+whose priority persona in §6 runs a shop.
+
+Q7's recorded trigger — "rising to 8.1 when WooCommerce does" — has not fired.
+When it does, raise `config.platform.php` in the same commit as the header, the
+readme, the CI matrix and `docs/compatibility.md`; the pin is the piece most
+easily forgotten, and forgetting it fails CI in a way that does not name itself.

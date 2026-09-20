@@ -37,13 +37,34 @@ if [ "${WP_VERSION}" = "latest" ]; then
 	echo "Latest WordPress is ${WP_VERSION}"
 fi
 
+# The test library comes from the wordpress-develop mirror on GitHub rather than
+# from develop.svn.wordpress.org, because Subversion is no longer a thing a
+# machine reliably has: GitHub's Ubuntu runners dropped it, and macOS has not
+# shipped it with the Xcode command line tools since 2020. A contributor
+# following docs/development.md on a current Mac could not run this script.
+#
+# The two sources tag the same release differently, and getting it wrong is a
+# 404 rather than an error that names itself:
+#
+#     Subversion   tags/6.5        tags/7.1.1
+#     GitHub       6.5.0           7.1.1
+#
+# Subversion drops the trailing zero of an x.y.0 release; GitHub does not. So a
+# two-part version gains one here.
 if [ "${WP_VERSION}" = "trunk" ] || [ "${WP_VERSION}" = "nightly" ]; then
 	ARCHIVE="https://wordpress.org/nightly-builds/wordpress-latest.zip"
-	TESTS_TAG="trunk"
+	TESTS_REF="refs/heads/trunk"
 else
 	ARCHIVE="https://wordpress.org/wordpress-${WP_VERSION}.tar.gz"
-	TESTS_TAG="tags/${WP_VERSION}"
+
+	case "${WP_VERSION}" in
+		*.*.*) TESTS_REF="refs/tags/${WP_VERSION}" ;;
+		*.*)   TESTS_REF="refs/tags/${WP_VERSION}.0" ;;
+		*)     TESTS_REF="refs/tags/${WP_VERSION}" ;;
+	esac
 fi
+
+TESTS_ARCHIVE="https://github.com/WordPress/wordpress-develop/archive/${TESTS_REF}.tar.gz"
 
 # WordPress core
 if [ ! -d "${WP_CORE_DIR}" ]; then
@@ -67,12 +88,31 @@ fi
 # Test library
 if [ ! -d "${WP_TESTS_DIR}" ]; then
 	mkdir -p "${WP_TESTS_DIR}"
-	svn co --quiet "https://develop.svn.wordpress.org/${TESTS_TAG}/tests/phpunit/includes/" "${WP_TESTS_DIR}/includes"
-	svn co --quiet "https://develop.svn.wordpress.org/${TESTS_TAG}/tests/phpunit/data/" "${WP_TESTS_DIR}/data"
+
+	download "${TESTS_ARCHIVE}" /tmp/wordpress-develop.tar.gz
+
+	# The archive's top directory is named after the ref — wordpress-develop-6.5.0,
+	# wordpress-develop-trunk — so it is read from the archive rather than
+	# reconstructed. Only three paths are extracted; the rest of
+	# wordpress-develop is the whole of WordPress twice over and is not wanted.
+	TESTS_ROOT="$(tar -tzf /tmp/wordpress-develop.tar.gz | head -1 | cut -d/ -f1)"
+
+	tar -xzf /tmp/wordpress-develop.tar.gz -C /tmp \
+		"${TESTS_ROOT}/tests/phpunit/includes" \
+		"${TESTS_ROOT}/tests/phpunit/data" \
+		"${TESTS_ROOT}/wp-tests-config-sample.php"
+
+	mv "/tmp/${TESTS_ROOT}/tests/phpunit/includes" "${WP_TESTS_DIR}/includes"
+	mv "/tmp/${TESTS_ROOT}/tests/phpunit/data" "${WP_TESTS_DIR}/data"
+	mv "/tmp/${TESTS_ROOT}/wp-tests-config-sample.php" "${WP_TESTS_DIR}/wp-tests-config-sample.php"
+
+	rm -rf "/tmp/${TESTS_ROOT}" /tmp/wordpress-develop.tar.gz
 fi
 
 if [ ! -f "${WP_TESTS_DIR}/wp-tests-config.php" ]; then
-	download "https://develop.svn.wordpress.org/${TESTS_TAG}/wp-tests-config-sample.php" "${WP_TESTS_DIR}/wp-tests-config.php"
+	# From the copy the archive already provided, rather than a second request to
+	# a different host for a file we have.
+	cp "${WP_TESTS_DIR}/wp-tests-config-sample.php" "${WP_TESTS_DIR}/wp-tests-config.php"
 
 	# BSD and GNU sed disagree about -i, so write through a temporary file.
 	sed \

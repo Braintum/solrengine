@@ -14,8 +14,12 @@
 # into the destination and the zip contains a partial copy of itself.
 build
 
-# Development tooling
-composer.json
+# Development tooling.
+#
+# composer.json is NOT excluded. Plugin Check reports a vendor/ directory with no
+# composer.json beside it, and it is right to: without the manifest there is no
+# way for a reviewer to see what the bundled code is meant to be. It is two
+# kilobytes and it makes vendor/ auditable.
 composer.lock
 package.json
 package-lock.json
@@ -40,6 +44,10 @@ docs
 README.md
 assets/src
 assets/README.md
+# Placeholders that exist so git tracks an otherwise empty directory. They have
+# no meaning outside the repository, and Plugin Check refuses hidden files
+# outright — a blocking error, not a style note.
+.gitkeep
 node_modules
 webpack.config.js
 .eslintrc.json

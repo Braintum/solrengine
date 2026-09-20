@@ -33,6 +33,33 @@ a seam has leaked and the fix belongs in the code, not the test.
 | `php bin/check-version.php` | Verify the header, constant and readme agree |
 | `bash bin/build-release.sh` | Build the distributable into `build/solrengine` |
 
+### Why `composer.json` pins a platform
+
+```json
+"config": { "platform": { "php": "7.4.33" } }
+```
+
+It tells Composer to resolve every dependency as though it were running on the
+oldest PHP SolrEngine supports, whatever the machine doing the resolving is
+running.
+
+Without it, `composer update` on a PHP 8 machine — which is every machine — picks
+dev dependencies that require PHP 8, writes them into `composer.lock`, and the
+lock then cannot be installed on 7.4 at all. CI's 7.4 job fails with "your lock
+file does not contain a compatible set of packages", which reads like a broken
+matrix and is really a lock file resolved against the wrong floor. That happened,
+and the packages were `doctrine/instantiator` and `myclabs/deep-copy`, both pulled
+in by PHPUnit.
+
+It has a second effect worth having: `composer install --no-dev` for a release
+resolves against the supported floor too, so the shipped `vendor/` is correct by
+construction rather than because the machine that built it happened to be old
+enough.
+
+Raise the number when the supported floor rises — see
+[ADR-011](../.claude/plans/adr/ADR-011-version-support-policy.md), which records
+what has to be true first.
+
 ### A warning about `composer lint:fix`
 
 `phpcbf` rewrites string literals, not just whitespace. During Phase 0 it
@@ -47,6 +74,16 @@ the diff after auto-fixing, and never auto-fix and commit in one step.
 bash bin/install-wp-tests.sh wordpress_test root '' 127.0.0.1 latest
 SOLRENGINE_TEST_SUITE=integration composer test:integration
 ```
+
+Needs `curl` (or `wget`), `tar` and a MySQL you can reach. Deliberately **not**
+Subversion: GitHub's runners dropped it and macOS has not shipped it with the
+Xcode command line tools since 2020, so the script takes the test library from
+the `wordpress-develop` mirror on GitHub instead.
+
+One wrinkle lives in that script rather than in your head. The two sources tag
+the same release differently — Subversion calls it `6.5`, GitHub calls it
+`6.5.0` — so a two-part version gains a trailing zero on the way to the URL. Get
+it wrong and the answer is a 404 rather than anything that names itself.
 
 ## Working without Solr
 
