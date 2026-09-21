@@ -249,3 +249,17 @@ jobs:
       - uses: wordpress/plugin-check-action@v1
         with:
           build-dir: ./build/solrengine
+          # One suppression, and the same position phpcs.xml.dist already takes
+          # for this sniff: an exception message is logged, not rendered, and
+          # escaping it mangles the message for whoever has to read it.
+          #
+          # The concrete case is Support/Container.php, which reports an unknown
+          # or circular service id. That class loads no WordPress at all — the
+          # unit suite fails if it ever needs to — so escaping there would make
+          # the container depend on WordPress being loaded before it could
+          # report a typo in a service name. Verified by trying it: two unit
+          # tests went red immediately.
+          #
+          # Recorded rather than hidden: WordPress.org's own review runs the
+          # unsuppressed check, and this is the answer if they ask.
+          ignore-codes: WordPress.Security.EscapeOutput.ExceptionNotEscaped

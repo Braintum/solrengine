@@ -86,7 +86,13 @@ if [ ! -d "${WP_CORE_DIR}" ]; then
 fi
 
 # Test library
-if [ ! -d "${WP_TESTS_DIR}" ]; then
+#
+# Guarded on a file the download produces rather than on the directory, which
+# this script creates itself. A run interrupted between the mkdir and the
+# download would otherwise leave a directory that looks complete, skip the
+# download for ever, and fail further down copying a sample file that was never
+# fetched — under `set -e`, with no message naming the cause.
+if [ ! -f "${WP_TESTS_DIR}/includes/bootstrap.php" ]; then
 	mkdir -p "${WP_TESTS_DIR}"
 
 	download "${TESTS_ARCHIVE}" /tmp/wordpress-develop.tar.gz

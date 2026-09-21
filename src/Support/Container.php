@@ -97,27 +97,21 @@ final class Container {
 			return $this->resolved[ $id ];
 		}
 
+		// Deliberately not escaped, and the unit suite enforces it. This class
+		// loads no WordPress — tests/bootstrap.php states that a unit test
+		// needing a WordPress function means a seam has leaked — and esc_html()
+		// here made the container, the most foundational class in the plugin,
+		// depend on WordPress being loaded before it could report a typo in a
+		// service name. See the ExceptionNotEscaped note in phpcs.xml.dist.
 		if ( ! isset( $this->factories[ $id ] ) ) {
-			// esc_html() on a service identifier is the identity function: every
-			// id in this plugin is lower-case letters, digits and dots, supplied
-			// by our own code and never by a request. It is here because Plugin
-			// Check treats an unescaped variable in an exception message as a
-			// blocking error and does not read this project's PHPCS ruleset,
-			// which excludes that sniff.
-			//
-			// The exclusion still stands for the general case, and the reasoning
-			// in phpcs.xml.dist is unchanged: escaping an exception message that
-			// carries text from a server mangles it for whoever has to read it.
-			// This is the one place where the value being escaped provably
-			// cannot change, so satisfying the gate costs nothing.
 			throw new RuntimeException(
-				sprintf( 'SolrEngine: no service registered for "%s".', esc_html( $id ) )
+				sprintf( 'SolrEngine: no service registered for "%s".', $id )
 			);
 		}
 
 		if ( isset( $this->resolving[ $id ] ) ) {
 			throw new RuntimeException(
-				sprintf( 'SolrEngine: circular dependency while resolving "%s".', esc_html( $id ) )
+				sprintf( 'SolrEngine: circular dependency while resolving "%s".', $id )
 			);
 		}
 
