@@ -101,7 +101,22 @@ if [ ! -f "${WP_TESTS_DIR}/includes/bootstrap.php" ]; then
 	# wordpress-develop-trunk — so it is read from the archive rather than
 	# reconstructed. Only three paths are extracted; the rest of
 	# wordpress-develop is the whole of WordPress twice over and is not wanted.
-	TESTS_ROOT="$(tar -tzf /tmp/wordpress-develop.tar.gz | head -1 | cut -d/ -f1)"
+	#
+	# `head` exits after the first line and closes tar's stdout. GNU tar 1.35,
+	# which the Ubuntu runners ship, reports that SIGPIPE as "stdout: write
+	# error" and exits 2. Under pipefail the script would die here, before
+	# extracting anything. The write error is the pipe closing, not a bad
+	# archive, so it is not a failure. An empty name is.
+	set +o pipefail
+	TESTS_ROOT="$(tar -tzf /tmp/wordpress-develop.tar.gz 2>/tmp/wordpress-develop-list.err | head -1 | cut -d/ -f1)"
+	set -o pipefail
+
+	if [ -z "${TESTS_ROOT}" ]; then
+		cat /tmp/wordpress-develop-list.err >&2 || true
+		echo "Could not read the top directory of the test library archive." >&2
+		exit 1
+	fi
+	rm -f /tmp/wordpress-develop-list.err
 
 	tar -xzf /tmp/wordpress-develop.tar.gz -C /tmp \
 		"${TESTS_ROOT}/tests/phpunit/includes" \
