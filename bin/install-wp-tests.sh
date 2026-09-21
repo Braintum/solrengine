@@ -33,7 +33,13 @@ download() {
 
 if [ "${WP_VERSION}" = "latest" ]; then
 	download https://api.wordpress.org/core/version-check/1.7/ /tmp/wp-latest.json
-	WP_VERSION="$(grep -o '"version":"[^"]*' /tmp/wp-latest.json | head -1 | cut -d'"' -f4)"
+	# sed rather than `head -1` for the same reason as the archive listing
+	# further down: `head` closes the pipe on its first line, and a writer with
+	# more to send takes EPIPE and fails the pipeline under pipefail. This one
+	# has never failed — the response yields twenty-six matches, which fit the
+	# pipe buffer, so grep finishes before head leaves — but "works because the
+	# output is small" is a property of the server's reply, not of this script.
+	WP_VERSION="$(grep -o '"version":"[^"]*' /tmp/wp-latest.json | sed -n '1s/.*:"//p')"
 	echo "Latest WordPress is ${WP_VERSION}"
 fi
 
