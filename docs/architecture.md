@@ -10,57 +10,143 @@ today.
 WordPress surfaces          themes, blocks, REST, WP-CLI, WooCommerce
           |
 Integration layer           knows WordPress, not the search engine
-          |  Contracts only
+          |  contracts only
 Domain layer                knows neither
-          |  Contracts only
+          |  contracts only
 Backend adapters            knows the engine, not WordPress
 ```
 
 The rule that makes the separation real: **the domain layer must be
-unit-testable with no WordPress loaded**. The unit suite enforces it, because
-it never loads WordPress. If a unit test starts needing `get_option()`, the
-seam has leaked.
+unit-testable with no WordPress loaded**. The unit suite enforces it, because it
+never loads WordPress — `tests/bootstrap.php` loads the shims *only* when
+WordPress is absent, so a domain class that starts calling `get_option()` fails
+immediately rather than quietly acquiring a dependency.
 
-## What exists after Phase 0
+### Telling the layers apart
+
+The boundary is not "does it mention WordPress" — it is **does it read or write
+WordPress state**. A domain class may call a pure helper (`__()`,
+`wp_json_encode()`, `wp_parse_url()`) and may fire a hook. It may not touch an
+option, a post, a term, a user or the database.
+
+`tests/wp-shims.php` is where that line is drawn in practice. Six functions are
+shimmed — `__()`, `esc_html__()`, `wp_parse_url()`, `wp_json_encode()`,
+`do_action()` and `apply_filters()` — because shimming those is honest, and the
+file's own comment says that needing a shim "with real behaviour — an option, a
+hook, a query" means a seam is leaking.
+
+**The mechanical way to find the domain layer is to read the `@covers`
+annotations in `tests/Unit/`.** If a class is in the unit suite, it is domain, by
+construction — the suite could not run otherwise.
+
+| Layer | Where | How to recognise it |
+| --- | --- | --- |
+| Domain | `Contracts/`, `Schema/`, `Language/`, most of `Search/`, the pure half of `Documents/` | In the unit suite. Constructor takes values or interfaces. No `get_option`, no `WP_Post`, no `$wpdb` |
+| Integration | `Integration/`, `Admin/`, `Rest/`, `Cli/`, most of `Indexing/`, `Support/Config`, `Support/Credentials`, `Support/Tables` | Registers hooks, reads options, handles `WP_Post`/`WP_Query`, knows WooCommerce |
+| Backend adapters | `Backend/Solr/`, `Backend/Memory/` | Implements the four backend contracts. Only place that speaks Solr |
+
+Three borderline cases are worth knowing, because each one marks where a seam
+was deliberately placed:
+
+- **`Documents/` is split.** `DocumentFields`, `MetaAllowlist` and `TermPaths`
+  are pure and unit-tested; `PostDocumentBuilder` and `MetaKeys` read posts and
+  the database. The mapping rules are domain; reading WordPress is not.
+- **`Search/` is split.** Nine of eleven classes are pure. `SearchService`
+  (caching, circuit breaker) and `FacetLabeller` (resolves term names) are not.
+- **`Schema/AppliedSchema` is domain despite storing state**, because it is
+  handed a `Config` rather than calling `get_option()` itself, and its verdict
+  logic is a pure static function with its own tests. That is what the seam looks
+  like when it works.
+
+## What the code contains
 
 ```
-solrengine.php               Requirement gate and hook registration
-src/Bootstrap.php            Composition root
-src/Contracts/               Public API
+solrengine.php               Requirement gate. Parses on PHP 5.6 by necessity:
+                             it is what reports that PHP is too old
+src/Bootstrap.php            Composition root. The only class that knows how
+                             anything is constructed. Start reading here
+
+src/Contracts/               PUBLIC API. Interfaces and immutable values
   Result                     Outcome of anything that can fail
   Capabilities               What a backend can do, detected not assumed
-  DocumentRef                Stable identity of one indexable object
-  WriteResult                Outcome of a batch write, including partial failure
-  IndexStatus                Index health snapshot
+  Document / DocumentRef     A document, and the stable identity of one object
+  SearchQuery / SearchResults Structured query and its answer. Serialisable
+  Selector                   Which documents a bulk delete matches
+  Facet* / Schema*           Facet and schema value objects
   SearchBackend              Reads
   IndexBackend               Writes
   SchemaBackend              Inspects and, where permitted, changes the schema
   LifecycleBackend           Builds a replacement index and switches to it
   LanguageProvider           Where a site's languages come from
-  JobQueue                   Defers work
-  Logger                     Records what happened
-src/Support/
-  Container                  Lazy service construction
-  Config                     Defaults, then options, then constants
-  Credentials                Constants first, encrypted option second
-  Encryption                 Sodium, keyed from the site salts
-  NullLogger / DebugLogger
+  JobQueue / Logger          Defers work; records what happened
+
+src/Support/                 Container, Config, Credentials, Encryption, Tables
 src/Backend/BackendRegistry  Which backends exist, which indexes, which searches
-src/Backend/Memory/          A second adapter. Proves the contracts are
-                             satisfiable without Solr; development only
-src/Language/                Language tags, and the site's languages
+src/Backend/Solr/            Endpoint validator, HTTP transport, the adapter
+src/Backend/Memory/          Second adapter. Proves the contracts hold without
+                             Solr; reports itself managed. Development only
+src/Documents/               WordPress object -> Document
+src/Indexing/                The write path, plus full sync, rebuild and history
+src/Schema/                  Contract definition, diff planner, exporter
+src/Search/                  The read path: translation, relevance, facets, cache
+src/Integration/WordPress/   Query substitution, hydration, filter UI
+src/Integration/WooCommerce/ Products, shop queries, catalogue facets
+src/Integration/Multilingual/ WPML, Polylang, core locale
+src/Language/                Language tags; the site's languages
 src/Multisite/               Network configuration and this site's scope
+src/Rest/                    search, facets, suggest, status
+src/Admin/                   Connection, Dashboard, Content, Search, Tools, Network
+src/Cli/                     Every WP-CLI command
 ```
 
-Nothing connects to Solr yet. That is Phase 1.
+## The two paths through it
+
+Everything else is detail around these.
+
+**Writing.** A content change marks a reference and returns; nothing expensive
+happens in the request that caused it.
+
+```
+save_post / term / WooCommerce events
+  -> Indexing\HookListeners        marks a reference, nothing more
+  -> Indexing\DirtySet             coalesces duplicates within the request
+  -> 'shutdown'                    QueueWorker::flush()
+  -> Contracts\JobQueue            Action Scheduler, or WP-Cron
+  -> Indexing\QueueWorker
+  -> Indexing\Indexer
+  -> Documents\PostDocumentBuilder WP_Post -> Document
+  -> IndexBackend::write_batch
+  -> Backend\Solr\SolrBackend -> HttpTransport
+```
+
+**Reading.** Two hooks: one marks the query cheaply, the other answers it.
+
+```
+'pre_get_posts'    Integration\WordPress\QueryIntegration::mark_query()
+                   flags the query. Builds nothing, because this fires for
+                   every menu and widget query on the page
+'posts_pre_query'  QueryIntegration::maybe_substitute()
+  -> Search\SearchService          cache, circuit breaker
+  -> SearchBackend::search
+  -> Search\QueryTranslator        the ONLY place Solr syntax is produced
+  -> HttpTransport -> Search\ResponseParser
+  -> Integration\WordPress\ResultHydration   SearchHit[] -> WP_Post[]
+```
+
+`return null` from `posts_pre_query` is the entire fallback story: WordPress runs
+its own query and the visitor never knows.
+
+Hooking the query layer rather than the template layer is what keeps themes,
+block themes, page builders and WooCommerce loops working — none of them can tell
+the difference.
 
 ## Three decisions visible in the code
 
 **Failure is a value, not an exception.** Every backend call returns `Result`.
 Nothing throws across the integration boundary, because an unreachable Solr is
-an expected condition and WordPress must keep rendering. The eventual search
-integration returns `null` from `posts_pre_query` on failure, which hands the
-query straight back to WordPress.
+an expected condition and WordPress must keep rendering. `QueryIntegration`
+returns `null` from `posts_pre_query` on failure, which hands the query straight
+back to WordPress.
 
 **Identity is composite.** `DocumentRef::document_id()` produces
 `se:{site_id}:{object_type}:{object_id}`. The prototype used the bare post ID,
@@ -74,25 +160,29 @@ never searches and never saves a post pays for `Bootstrap` and nothing else.
 
 ## Extension points
 
+**[docs/hooks.md](hooks.md) is the reference, and it is generated** from the
+docblock above each hook by `bin/generate-hooks.php`. It is not duplicated here,
+because a second hand-written list is a list that drifts — which is the whole
+reason the generated one exists.
+
+CI runs the generator with `--check`, so the reference cannot fall behind the
+code. The same step fails when a hook has no docblock, no `@since`, or documents
+a different number of parameters than it passes: hooks are public API from 1.0,
+and an undocumented one has no contract.
+
+The four worth knowing before reading anything else:
+
 | Hook | Type | Purpose |
 | --- | --- | --- |
-| `solrengine_booted` | action | Register a backend, facet or admin screen. Receives the container. Fires before anything is constructed |
+| `solrengine_booted` | action | Register a backend, facet or admin screen. Receives the container, before anything is constructed |
+| `solrengine_document` | filter | The primary customisation point: a document immediately before it is queued |
 | `solrengine_register_filters` | action | Register a filter a caller may narrow by |
 | `solrengine_facet_definitions` | filter | Register a facet a caller may count by |
-| `solrengine_indexable_post_types` | filter | Declare a post type as indexable. Honoured by the save listeners and by a full sync |
-| `solrengine_suggest_query` | filter | The autocomplete query before it reaches the backend |
-| `solrengine_full_sync_complete` | action | A full run finished. Receives the run state; a run with a `target` was building a replacement index rather than the live one |
-| `solrengine_rebuild_switched` | action | Searches are now answered by a rebuilt index. Receives the index name and the rebuild state |
-| `solrengine_language_provider` | filter | Supply a LanguageProvider for a multilingual plugin SolrEngine does not know about |
-
-More arrive with the phases that need them. The plan's section 11.3 lists the
-intended set; each one is public API from 1.0 and needs a test and a docblock
-before it ships.
 
 Two hooks that will deliberately never exist: anything exposing a raw backend
-request, and anything letting a third party inject query syntax. Both would
-make the injection guarantees unenforceable and would freeze Solr's wire format
-as public API.
+request, and anything letting a third party inject query syntax. Both would make
+the injection guarantees unenforceable and would freeze Solr's wire format as
+public API.
 
 ## Credentials
 
