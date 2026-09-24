@@ -369,7 +369,29 @@ final class Config {
 
 		$this->loaded[ $option ] = $group;
 
-		return update_option( $option, $group, false );
+		// Autoloaded, because all three groups are read on every request that
+		// searches: the endpoint and timeouts, the search settings, and the
+		// schema state. Left off, each one is a separate SELECT on a request a
+		// visitor is waiting on — measured at 15ms per search against a database
+		// on another host, which is where a managed database usually is. They are
+		// a few hundred bytes together, and `autoload_options()` names them so an
+		// upgrade can correct rows written before this.
+		return update_option( $option, $group, true );
+	}
+
+	/**
+	 * The option groups that are read on every search and therefore autoloaded.
+	 *
+	 * @since 0.10.2
+	 *
+	 * @return string[]
+	 */
+	public static function autoload_options(): array {
+		return array(
+			self::OPTION_CONNECTION,
+			self::OPTION_INDEX,
+			self::OPTION_STATE,
+		);
 	}
 
 	/**

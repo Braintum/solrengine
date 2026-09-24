@@ -56,6 +56,8 @@ use SolrEngine\Search\FilterRegistry;
 use SolrEngine\Search\QueryTranslator;
 use SolrEngine\Search\RelevanceProfile;
 use SolrEngine\Search\ResponseParser;
+use SolrEngine\Contracts\Breaker;
+use SolrEngine\Contracts\Cache;
 use SolrEngine\Contracts\Viewer;
 use SolrEngine\Search\SearchService;
 use SolrEngine\Schema\AppliedSchema;
@@ -64,6 +66,9 @@ use SolrEngine\Schema\SchemaExporter;
 use SolrEngine\Schema\SchemaPlanner;
 use SolrEngine\Support\Config;
 use SolrEngine\Support\Container;
+use SolrEngine\Support\ObjectCache;
+use SolrEngine\Support\OptionBreaker;
+use SolrEngine\Support\Upgrade;
 use SolrEngine\Support\WpViewer;
 use SolrEngine\Support\Credentials;
 use SolrEngine\Support\DebugLogger;
@@ -637,13 +642,29 @@ final class Bootstrap {
 		);
 
 		$container->share(
+			'cache',
+			static function (): Cache {
+				return new ObjectCache();
+			}
+		);
+
+		$container->share(
+			'breaker',
+			static function ( Container $c ): Breaker {
+				return new OptionBreaker( $c->get( 'logger' ) );
+			}
+		);
+
+		$container->share(
 			'search.service',
 			static function ( Container $c ): SearchService {
 				return new SearchService(
 					$c->get( 'backends' )->search(),
 					$c->get( 'logger' ),
 					$c->get( 'config' )->get_int( 'search.cache_ttl', 300 ),
-					$c->get( 'viewer' )
+					$c->get( 'viewer' ),
+					$c->get( 'cache' ),
+					$c->get( 'breaker' )
 				);
 			}
 		);
@@ -870,6 +891,12 @@ final class Bootstrap {
 			}
 
 			return;
+		}
+
+		if ( is_admin() ) {
+			// Corrections for a site that updated rather than activated. Admin
+			// only: nothing here may cost a visitor a query.
+			add_action( 'admin_init', array( Upgrade::class, 'run' ) );
 		}
 
 		$this->register_indexing( $container );

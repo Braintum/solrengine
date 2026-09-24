@@ -7,6 +7,8 @@
 
 namespace SolrEngine\Search;
 
+use SolrEngine\Contracts\Breaker;
+use SolrEngine\Contracts\Cache;
 use SolrEngine\Contracts\Logger;
 use SolrEngine\Contracts\Result;
 use SolrEngine\Contracts\SearchBackend;
@@ -15,6 +17,8 @@ use SolrEngine\Contracts\SearchResults;
 use SolrEngine\Contracts\Suggestions;
 use SolrEngine\Contracts\SuggestQuery;
 use SolrEngine\Contracts\Viewer;
+use SolrEngine\Support\ObjectCache;
+use SolrEngine\Support\OptionBreaker;
 use SolrEngine\Support\WpViewer;
 
 /**
@@ -41,27 +45,6 @@ final class SearchService {
 	 * @var string
 	 */
 	private const CACHE_GROUP = 'solrengine';
-
-	/**
-	 * Option holding circuit breaker state.
-	 *
-	 * @var string
-	 */
-	private const BREAKER_OPTION = 'solrengine_breaker';
-
-	/**
-	 * Consecutive failures before the breaker opens.
-	 *
-	 * @var int
-	 */
-	private const FAILURE_THRESHOLD = 3;
-
-	/**
-	 * Seconds the breaker stays open.
-	 *
-	 * @var int
-	 */
-	private const COOLDOWN_SECONDS = 60;
 
 	/**
 	 * Backend to query.
@@ -92,24 +75,49 @@ final class SearchService {
 	private $viewer;
 
 	/**
+	 * Where results are kept.
+	 *
+	 * @var Cache
+	 */
+	private $cache;
+
+	/**
+	 * Backend health.
+	 *
+	 * @var Breaker
+	 */
+	private $breaker;
+
+	/**
 	 * Constructor.
+	 *
+	 * Every collaborator is injected and every default is a WordPress-backed
+	 * implementation, so this class contains no WordPress call of its own beyond
+	 * `apply_filters()`. That is what lets the instant-search entry point run it
+	 * in a process with no object cache and no user stack, and lets the unit
+	 * suite run it with no WordPress at all.
 	 *
 	 * @param SearchBackend|null $backend   Backend to query, or null when none.
 	 * @param Logger             $logger    Logger.
 	 * @param int                $cache_ttl Seconds to cache results.
-	 * @param Viewer|null        $viewer    Who is asking. Defaults to asking
-	 *                                      WordPress.
+	 * @param Viewer|null        $viewer    Who is asking.
+	 * @param Cache|null         $cache     Where to keep results.
+	 * @param Breaker|null       $breaker   Backend health.
 	 */
 	public function __construct(
 		?SearchBackend $backend,
 		Logger $logger,
 		int $cache_ttl = 300,
-		?Viewer $viewer = null
+		?Viewer $viewer = null,
+		?Cache $cache = null,
+		?Breaker $breaker = null
 	) {
 		$this->backend   = $backend;
 		$this->logger    = $logger;
 		$this->cache_ttl = max( 0, $cache_ttl );
 		$this->viewer    = $viewer ?? new WpViewer();
+		$this->cache     = $cache ?? new ObjectCache( self::CACHE_GROUP );
+		$this->breaker   = $breaker ?? new OptionBreaker( $logger );
 	}
 
 	/**
@@ -151,7 +159,7 @@ final class SearchService {
 		$query = apply_filters( 'solrengine_search_query', $query );
 
 		if ( ! $query instanceof SearchQuery ) {
-			return Result::failure( 'bad_filter', 'A solrengine_search_query filter returned something that is not a SearchQuery.' );
+			return $this->bad_hook( 'bad_filter', 'solrengine_search_query', 'a SearchQuery' );
 		}
 
 		$cached = $this->from_cache( $query );
@@ -173,7 +181,7 @@ final class SearchService {
 		$results = $result->value();
 
 		if ( ! $results instanceof SearchResults ) {
-			return Result::failure( 'bad_results', 'The backend returned something that is not SearchResults.' );
+			return $this->bad_hook( 'bad_results', 'search backend', 'SearchResults' );
 		}
 
 		$this->to_cache( $query, $results );
@@ -190,7 +198,7 @@ final class SearchService {
 
 		return $results instanceof SearchResults
 			? Result::success( $results )
-			: Result::failure( 'bad_filter', 'A solrengine_search_results filter returned something unusable.' );
+			: $this->bad_hook( 'bad_filter', 'solrengine_search_results', 'SearchResults' );
 	}
 
 	/**
@@ -232,11 +240,11 @@ final class SearchService {
 		$query = apply_filters( 'solrengine_suggest_query', $query );
 
 		if ( ! $query instanceof SuggestQuery ) {
-			return Result::failure( 'bad_filter', 'A solrengine_suggest_query filter returned something that is not a SuggestQuery.' );
+			return $this->bad_hook( 'bad_filter', 'solrengine_suggest_query', 'a SuggestQuery' );
 		}
 
 		$key    = 'suggest_' . SOLRENGINE_SCHEMA_CONTRACT_VERSION . '_' . $query->cache_key();
-		$cached = $this->cache_enabled() ? wp_cache_get( $key, self::CACHE_GROUP ) : false;
+		$cached = $this->cache_enabled() ? $this->cache->get( $key ) : null;
 
 		if ( $cached instanceof Suggestions ) {
 			return Result::success( $cached );
@@ -255,11 +263,11 @@ final class SearchService {
 		$suggestions = $result->value();
 
 		if ( ! $suggestions instanceof Suggestions ) {
-			return Result::failure( 'bad_results', 'The backend returned something unusable.' );
+			return $this->bad_hook( 'bad_results', 'search backend', 'Suggestions' );
 		}
 
 		if ( $this->cache_enabled() ) {
-			wp_cache_set( $key, $suggestions, self::CACHE_GROUP, max( 60, $this->cache_ttl ) );
+			$this->cache->set( $key, $suggestions, max( 60, $this->cache_ttl ) );
 		}
 
 		/**
@@ -274,7 +282,34 @@ final class SearchService {
 
 		return $suggestions instanceof Suggestions
 			? Result::success( $suggestions )
-			: Result::failure( 'bad_filter', 'A solrengine_suggestions filter returned something unusable.' );
+			: $this->bad_hook( 'bad_filter', 'solrengine_suggestions', 'Suggestions' );
+	}
+
+	/**
+	 * Report a hook that returned something unusable.
+	 *
+	 * These are developer errors, and they used to fail silently: a filter
+	 * returning the wrong type turned search off and left nothing anywhere
+	 * saying why. The visitor still gets the WordPress fallback; the site owner
+	 * now gets a line in the log naming the hook.
+	 *
+	 * @param string $code Stable failure code.
+	 * @param string $hook Hook that misbehaved.
+	 * @param string $want What it should have returned.
+	 * @return Result
+	 */
+	private function bad_hook( string $code, string $hook, string $want ): Result {
+		$message = sprintf( 'A %1$s filter returned something that is not %2$s.', $hook, $want );
+
+		$this->logger->error(
+			'Search hook returned an unusable value',
+			array(
+				'hook'     => $hook,
+				'expected' => $want,
+			)
+		);
+
+		return Result::failure( $code, $message );
 	}
 
 	/**
@@ -305,7 +340,7 @@ final class SearchService {
 			return null;
 		}
 
-		$cached = wp_cache_get( $this->cache_key( $query ), self::CACHE_GROUP );
+		$cached = $this->cache->get( $this->cache_key( $query ) );
 
 		return $cached instanceof SearchResults ? $cached : null;
 	}
@@ -322,7 +357,7 @@ final class SearchService {
 			return;
 		}
 
-		wp_cache_set( $this->cache_key( $query ), $results, self::CACHE_GROUP, $this->cache_ttl );
+		$this->cache->set( $this->cache_key( $query ), $results, $this->cache_ttl );
 	}
 
 	/**
@@ -344,13 +379,7 @@ final class SearchService {
 	 * @return bool
 	 */
 	private function breaker_is_open(): bool {
-		$state = get_option( self::BREAKER_OPTION, array() );
-
-		if ( ! is_array( $state ) || empty( $state['open_until'] ) ) {
-			return false;
-		}
-
-		return time() < (int) $state['open_until'];
+		return $this->breaker->is_open();
 	}
 
 	/**
@@ -360,31 +389,7 @@ final class SearchService {
 	 * @return void
 	 */
 	private function record_failure( string $code ): void {
-		$state = get_option( self::BREAKER_OPTION, array() );
-		$state = is_array( $state ) ? $state : array();
-
-		$failures = (int) ( $state['failures'] ?? 0 ) + 1;
-
-		$state['failures']   = $failures;
-		$state['last_code']  = $code;
-		$state['last_error'] = time();
-
-		if ( $failures >= self::FAILURE_THRESHOLD ) {
-			$state['open_until'] = time() + self::COOLDOWN_SECONDS;
-
-			// Logged once when the breaker trips, not once per failed search.
-			// A backend outage should not also produce a log flood.
-			$this->logger->error(
-				'Search backend unavailable, pausing requests',
-				array(
-					'failures' => $failures,
-					'code'     => $code,
-					'cooldown' => self::COOLDOWN_SECONDS,
-				)
-			);
-		}
-
-		update_option( self::BREAKER_OPTION, $state, false );
+		$this->breaker->record_failure( $code );
 	}
 
 	/**
@@ -393,12 +398,6 @@ final class SearchService {
 	 * @return void
 	 */
 	private function record_success(): void {
-		$state = get_option( self::BREAKER_OPTION, array() );
-
-		if ( ! is_array( $state ) || array() === $state ) {
-			return;
-		}
-
-		delete_option( self::BREAKER_OPTION );
+		$this->breaker->record_success();
 	}
 }
