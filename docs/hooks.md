@@ -13,7 +13,7 @@ it arrived in. Each one is public API from 1.0.
       php bin/generate-hooks.php
 -->
 
-22 hooks: 8 actions and 14 filters.
+23 hooks: 8 actions and 15 filters.
 
 - [Startup](#startup)
 - [What gets indexed](#what-gets-indexed)
@@ -237,9 +237,22 @@ Filters suggestions before they are returned.
 
 ## Integration with WordPress
 
+### `solrengine_instant_fast_path`
+
+Filter · since 0.10.2 · `src/Integration/WordPress/InstantSearch.php:90`
+
+Filters whether autocomplete uses the fast path.
+
+Returning false sends autocomplete through the REST route instead,
+where `rest_api_init` has run and every suggest filter fires.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `$enabled` | `bool` | Whether to use the fast path. |
+
 ### `solrengine_instant_search_selector`
 
-Filter · since 0.5.0 · `src/Integration/WordPress/InstantSearch.php:115`
+Filter · since 0.5.0 · `src/Integration/WordPress/InstantSearch.php:162`
 
 Filters which inputs get autocomplete.
 

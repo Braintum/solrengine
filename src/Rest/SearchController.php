@@ -21,6 +21,7 @@ use SolrEngine\Search\FacetSelection;
 use SolrEngine\Search\FilterRegistry;
 use SolrEngine\Search\QueryTranslator;
 use SolrEngine\Search\SearchService;
+use SolrEngine\Search\SuggestPayload;
 use SolrEngine\Support\Config;
 use WP_Error;
 use WP_REST_Request;
@@ -280,24 +281,7 @@ final class SearchController {
 	 * @return WP_REST_Response
 	 */
 	private function suggest_response( Suggestions $suggestions ): WP_REST_Response {
-		$items = array();
-
-		foreach ( $suggestions->items() as $item ) {
-			$items[] = array(
-				'text'      => $item->text(),
-				'url'       => $item->url(),
-				'id'        => null === $item->ref() ? 0 : $item->ref()->object_id(),
-				'post_type' => $item->post_type(),
-			);
-		}
-
-		$response = new WP_REST_Response(
-			array(
-				'suggestions' => $items,
-				'prefix'      => $suggestions->prefix(),
-				'took_ms'     => $suggestions->took_ms(),
-			)
-		);
+		$response = new WP_REST_Response( ( new SuggestPayload() )->render( $suggestions ) );
 
 		// A short browser cache. Several visitors type the same prefixes, and
 		// the same visitor backspaces into one they just sent. Private, so a

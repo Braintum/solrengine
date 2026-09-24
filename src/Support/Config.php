@@ -142,6 +142,12 @@ final class Config {
 				'search.shop_enabled'           => false,
 				'search.instant_enabled'        => false,
 				'search.instant_limit'          => 8,
+				// Autocomplete answers through instant.php rather than the REST
+				// route. Same JSON, without rest_api_init's bootstrap.
+				'search.instant_fast_path'      => true,
+				// Autocomplete gives up early on purpose. A suggestion that
+				// lands after two more keystrokes is not a suggestion.
+				'search.instant_timeout_ms'     => 1500,
 				'search.max_rows'               => 50,
 				'search.deep_paging_limit'      => 1000,
 				'search.cache_ttl'              => 300,
