@@ -10,6 +10,30 @@ WordPress plugin that answers search from Apache Solr and falls back to WordPres
 - Do not add a hook that exposes a raw backend request or lets a caller inject query syntax.
 - Never log, return, or store credentials in plaintext. Redact before logging.
 - New public API (hook, contract method, REST parameter) needs an `@since` docblock, a test, and a line in the matching doc.
+- Reuse before you add. Before writing anything that talks to a backend, builds a
+  query, or shapes a response, find the class that already does it. A second
+  implementation of an existing responsibility is a defect, not a feature — including
+  when the first one cannot run in your context.
+- An environment difference gets a seam, not a fork. When an existing class cannot run
+  where you need it (no HTTP API under `SHORTINIT`, no WordPress in CLI), extract the
+  part that varies behind an interface and inject it. Never copy the class and edit the
+  copy. `HttpTransport` with `Sender` is the worked example: all policy in one place,
+  only the wire call swapped.
+- One place per rule. Exactly one file builds a Solr request and interprets a reply.
+  Exactly one file defines each response body's shape. If the same protocol or
+  wire-format rule is written in two files, one will keep an older, laxer copy — which
+  is precisely how `build_query()` silently drops the site scope and the visibility
+  filter while still returning results.
+- Surfaces differ in bootstrap, never in behaviour. A REST route, a fast path and a CLI
+  command answering the same question call one domain class that answers it
+  (`Suggester`). The surface holds only bootstrap, input reading and output.
+- A new web-reachable entry point is a design decision, not an optimisation. Outside
+  `solrengine.php` and `instant.php`, do not add one. Any that exists resolves its paths
+  from `__FILE__` and never from the request, and carries the same rate limiting, site
+  scope and visibility filtering as the route it shortcuts.
+- Measure before building. Profile where the time actually goes and report it before
+  writing a faster path; most latency in a WordPress request is not in this plugin. A
+  change that buys speed with duplication has to justify the duplication first.
 
 ## Do not edit by hand
 

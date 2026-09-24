@@ -43,9 +43,10 @@ final class BackendRegistry {
 	private $index_factories = array();
 
 	/**
-	 * Human-readable labels keyed by identifier.
+	 * Human-readable labels keyed by identifier, each either a string or a
+	 * callable returning one.
 	 *
-	 * @var array<string,string>
+	 * @var array<string,string|callable>
 	 */
 	private $labels = array();
 
@@ -77,15 +78,23 @@ final class BackendRegistry {
 	 *
 	 * @since 0.1.0
 	 *
-	 * @param string   $id             Stable lowercase identifier, for example
-	 *                                 "solr". Stored in configuration, so it must
-	 *                                 not change once released.
-	 * @param string   $label          Human-readable name for the admin UI.
-	 * @param callable $search_factory Returns a SearchBackend.
-	 * @param callable $index_factory  Returns an IndexBackend.
+	 * @param string          $id             Stable lowercase identifier, for example
+	 *                                        "solr". Stored in configuration, so it must
+	 *                                        not change once released.
+	 * @param string|callable $label          Human-readable name for the admin
+	 *                                        UI, or a callable returning one.
+	 *                                        Pass a callable for anything needing
+	 *                                        translation: backends are registered
+	 *                                        on every request, the label is read
+	 *                                        only by the admin screens and the
+	 *                                        CLI, and `__()` is unavailable in the
+	 *                                        SHORTINIT process behind
+	 *                                        instant-search.
+	 * @param callable        $search_factory Returns a SearchBackend.
+	 * @param callable        $index_factory  Returns an IndexBackend.
 	 * @return void
 	 */
-	public function register( string $id, string $label, callable $search_factory, callable $index_factory ): void {
+	public function register( string $id, $label, callable $search_factory, callable $index_factory ): void {
 		$this->search_factories[ $id ] = $search_factory;
 		$this->index_factories[ $id ]  = $index_factory;
 		$this->labels[ $id ]           = $label;
@@ -111,7 +120,13 @@ final class BackendRegistry {
 	 * @return array<string,string>
 	 */
 	public function available(): array {
-		return $this->labels;
+		$out = array();
+
+		foreach ( $this->labels as $id => $label ) {
+			$out[ $id ] = is_callable( $label ) ? (string) $label() : (string) $label;
+		}
+
+		return $out;
 	}
 
 	/**

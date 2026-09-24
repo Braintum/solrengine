@@ -279,8 +279,8 @@ final class SolrBackend implements SearchBackend, IndexBackend, SchemaBackend, L
 	public function suggest( SuggestQuery $query ): Result {
 		if ( ! $query->is_long_enough() ) {
 			// Answered without a request. One character matches most of the
-			// index, tells the visitor nothing, and costs a round trip on
-			// every keystroke.
+			// index, tells the visitor nothing, and costs a round trip on every
+			// keystroke.
 			return Result::success( new Suggestions( array(), $query->prefix() ) );
 		}
 
@@ -290,6 +290,8 @@ final class SolrBackend implements SearchBackend, IndexBackend, SchemaBackend, L
 			return $result;
 		}
 
+		// Parsed by the shared reader rather than here, so the shape of a
+		// suggestion is defined in one place. See {@see SuggestionParser}.
 		return Result::success(
 			( new SuggestionParser() )->parse(
 				(array) $result->value( array() ),

@@ -14,6 +14,8 @@ use SolrEngine\Contracts\SearchQuery;
 use SolrEngine\Contracts\SearchResults;
 use SolrEngine\Contracts\Suggestions;
 use SolrEngine\Contracts\SuggestQuery;
+use SolrEngine\Contracts\Viewer;
+use SolrEngine\Support\WpViewer;
 
 /**
  * Decides whether and how a search runs, and what happens when it cannot.
@@ -83,16 +85,31 @@ final class SearchService {
 	private $cache_ttl;
 
 	/**
+	 * Who is asking.
+	 *
+	 * @var Viewer
+	 */
+	private $viewer;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param SearchBackend|null $backend   Backend to query, or null when none.
 	 * @param Logger             $logger    Logger.
 	 * @param int                $cache_ttl Seconds to cache results.
+	 * @param Viewer|null        $viewer    Who is asking. Defaults to asking
+	 *                                      WordPress.
 	 */
-	public function __construct( ?SearchBackend $backend, Logger $logger, int $cache_ttl = 300 ) {
+	public function __construct(
+		?SearchBackend $backend,
+		Logger $logger,
+		int $cache_ttl = 300,
+		?Viewer $viewer = null
+	) {
 		$this->backend   = $backend;
 		$this->logger    = $logger;
 		$this->cache_ttl = max( 0, $cache_ttl );
+		$this->viewer    = $viewer ?? new WpViewer();
 	}
 
 	/**
@@ -270,7 +287,7 @@ final class SearchService {
 	 * @return bool
 	 */
 	private function cache_enabled(): bool {
-		return 0 !== $this->cache_ttl && ! is_user_logged_in();
+		return 0 !== $this->cache_ttl && ! $this->viewer->is_authenticated();
 	}
 
 	/**
@@ -284,7 +301,7 @@ final class SearchService {
 	 * @return SearchResults|null
 	 */
 	private function from_cache( SearchQuery $query ): ?SearchResults {
-		if ( 0 === $this->cache_ttl || is_user_logged_in() ) {
+		if ( ! $this->cache_enabled() ) {
 			return null;
 		}
 
@@ -301,7 +318,7 @@ final class SearchService {
 	 * @return void
 	 */
 	private function to_cache( SearchQuery $query, SearchResults $results ): void {
-		if ( 0 === $this->cache_ttl || is_user_logged_in() ) {
+		if ( ! $this->cache_enabled() ) {
 			return;
 		}
 

@@ -56,6 +56,7 @@ use SolrEngine\Search\FilterRegistry;
 use SolrEngine\Search\QueryTranslator;
 use SolrEngine\Search\RelevanceProfile;
 use SolrEngine\Search\ResponseParser;
+use SolrEngine\Contracts\Viewer;
 use SolrEngine\Search\SearchService;
 use SolrEngine\Schema\AppliedSchema;
 use SolrEngine\Schema\ContractRegistry;
@@ -63,6 +64,7 @@ use SolrEngine\Schema\SchemaExporter;
 use SolrEngine\Schema\SchemaPlanner;
 use SolrEngine\Support\Config;
 use SolrEngine\Support\Container;
+use SolrEngine\Support\WpViewer;
 use SolrEngine\Support\Credentials;
 use SolrEngine\Support\DebugLogger;
 use SolrEngine\Support\Encryption;
@@ -107,6 +109,16 @@ final class Bootstrap {
 	private $booted = false;
 
 	/**
+	 * Whether service factories have been registered.
+	 *
+	 * Separate from $booted, because registering services and attaching hooks
+	 * are separate things: instant-search needs the first without the second.
+	 *
+	 * @var bool
+	 */
+	private $services_registered = false;
+
+	/**
 	 * Constructor.
 	 */
 	private function __construct() {
@@ -148,7 +160,7 @@ final class Bootstrap {
 
 		$this->booted = true;
 
-		$this->register_services();
+		$this->services();
 		$this->register_hooks();
 
 		// Backends are registered on init, not here. Registering one needs its
@@ -184,6 +196,40 @@ final class Bootstrap {
 	 * @return Container
 	 */
 	public function container(): Container {
+		return $this->container;
+	}
+
+	/**
+	 * The container, with every service factory registered and no hooks attached.
+	 *
+	 * `boot()` is the entry point for a WordPress request: it registers these
+	 * same factories and then attaches the plugin's hooks. Some entry points are
+	 * not a WordPress request and must not attach anything — instant-search
+	 * boots with `SHORTINIT` and answers one query — and they use this instead.
+	 *
+	 * Registration is lazy throughout, so this constructs nothing: the caller
+	 * resolves the one or two services it needs and pays for those alone. That
+	 * is what lets instant-search share this composition rather than assemble a
+	 * parallel one, which is how the two would drift apart on a timeout, a TLS
+	 * setting, or a relevance default.
+	 *
+	 * Callers in a reduced environment may override a factory before resolving
+	 * anything, for the few services whose definition assumes a full boot. See
+	 * {@see \SolrEngine\Rest\InstantEndpoint::container()}.
+	 *
+	 * Safe to call more than once.
+	 *
+	 * @since 0.10.2
+	 *
+	 * @return Container
+	 */
+	public function services(): Container {
+		if ( ! $this->services_registered ) {
+			$this->services_registered = true;
+
+			$this->register_services();
+		}
+
 		return $this->container;
 	}
 
@@ -584,12 +630,20 @@ final class Bootstrap {
 		);
 
 		$container->share(
+			'viewer',
+			static function (): Viewer {
+				return new WpViewer();
+			}
+		);
+
+		$container->share(
 			'search.service',
 			static function ( Container $c ): SearchService {
 				return new SearchService(
 					$c->get( 'backends' )->search(),
 					$c->get( 'logger' ),
-					$c->get( 'config' )->get_int( 'search.cache_ttl', 300 )
+					$c->get( 'config' )->get_int( 'search.cache_ttl', 300 ),
+					$c->get( 'viewer' )
 				);
 			}
 		);
@@ -657,7 +711,11 @@ final class Bootstrap {
 
 		$registry->register(
 			'solr',
-			__( 'Apache Solr (self-hosted)', 'solrengine' ),
+			// Deferred: this runs on every request, and instant-search registers
+			// backends in a process with no translation stack loaded.
+			static function (): string {
+				return __( 'Apache Solr (self-hosted)', 'solrengine' );
+			},
 			$factory,
 			$factory
 		);
@@ -678,7 +736,9 @@ final class Bootstrap {
 
 			$registry->register(
 				MemoryBackend::ID,
-				__( 'In-memory (development only)', 'solrengine' ),
+				static function (): string {
+					return __( 'In-memory (development only)', 'solrengine' );
+				},
 				$memory,
 				$memory
 			);

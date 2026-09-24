@@ -39,21 +39,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SOLRENGINE_VERSION', '0.10.1' );
-define( 'SOLRENGINE_PLUGIN_FILE', __FILE__ );
-define( 'SOLRENGINE_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
-define( 'SOLRENGINE_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'SOLRENGINE_MIN_PHP', '7.4' );
-define( 'SOLRENGINE_MIN_WP', '6.5' );
+// Version, paths and the schema contract version, shared with instant.php so
+// the two entry points cannot disagree about them.
+require_once __DIR__ . '/constants.php';
 
-/**
- * Schema contract version.
- *
- * Deliberately independent of the plugin version: most releases change nothing
- * about the Solr schema, and coupling the two would force meaningless
- * migrations. See ADR-003.
- */
-define( 'SOLRENGINE_SCHEMA_CONTRACT_VERSION', 1 );
+define( 'SOLRENGINE_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
 /**
  * Collect any unmet requirement.

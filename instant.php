@@ -5,7 +5,8 @@
  * Answers autocomplete on a WordPress boot small enough to keep up with typing.
  * Not a REST route: `rest_api_init` is where every active plugin registers its
  * routes, and on a WooCommerce site that cost 830ms before the suggest callback
- * ran. See {@see \SolrEngine\Rest\InstantEndpoint} for the full reasoning.
+ * ran. See {@see \SolrEngine\Rest\InstantEndpoint} for the reasoning and for what
+ * this bootstrap does and does not provide.
  *
  * This file is reached directly over HTTP, so it assumes nothing. It must parse
  * on old PHP for the same reason `solrengine.php` must: a syntax error here is a
@@ -19,8 +20,8 @@
 /**
  * Boot WordPress with the smallest surface that still has options and the
  * database. SHORTINIT loads neither plugins nor the theme, which is the entire
- * point: this plugin's own bootstrap is not loaded either, so everything below
- * resolves what it needs by hand.
+ * point: this plugin is not loaded as a plugin either, so the services below are
+ * registered explicitly rather than on a hook.
  */
 define( 'SHORTINIT', true );
 
@@ -49,48 +50,87 @@ for ( $solrengine_depth = 0; $solrengine_depth < 10; $solrengine_depth++ ) {
 	}
 }
 
-if ( '' === $solrengine_load ) {
-	header( 'Content-Type: application/json; charset=utf-8' );
-	header( 'Cache-Control: no-store' );
-	http_response_code( 503 );
+/**
+ * Answer with an empty list and give up.
+ *
+ * A broken install must not put an error in a dropdown, and must not fatal on a
+ * visitor's keystroke. The field keeps working; the REST route and the admin
+ * screens are where a misconfiguration gets reported to someone who can act.
+ *
+ * @param int $status HTTP status to send.
+ * @return void
+ */
+function solrengine_instant_give_up( $status ) {
+	if ( ! headers_sent() ) {
+		header( 'Content-Type: application/json; charset=utf-8' );
+		header( 'Cache-Control: no-store' );
+		http_response_code( $status );
+	}
+
 	echo '{"suggestions":[],"prefix":"","took_ms":0}';
 	exit;
+}
+
+if ( '' === $solrengine_load ) {
+	solrengine_instant_give_up( 503 );
 }
 
 require_once $solrengine_load;
 
-$solrengine_dir      = dirname( __FILE__ ) . '/';
-$solrengine_autoload = $solrengine_dir . 'vendor/autoload.php';
+$solrengine_constants = dirname( __FILE__ ) . '/constants.php';
+$solrengine_autoload  = dirname( __FILE__ ) . '/vendor/autoload.php';
 
-// Mirrors the requirement gate in solrengine.php. A missing autoloader is a
+// Mirrors the requirement gate in solrengine.php: a missing autoloader is a
 // broken install, not something to fatal over on a visitor's keystroke.
-if ( ! is_readable( $solrengine_autoload ) ) {
-	header( 'Content-Type: application/json; charset=utf-8' );
-	header( 'Cache-Control: no-store' );
-	http_response_code( 503 );
-	echo '{"suggestions":[],"prefix":"","took_ms":0}';
-	exit;
+if ( ! is_readable( $solrengine_constants ) || ! is_readable( $solrengine_autoload ) ) {
+	solrengine_instant_give_up( 503 );
 }
 
+/*
+ * The version, the paths and the schema contract version, from the same file
+ * solrengine.php reads them from. Not solrengine.php itself: that one is a
+ * WordPress plugin entry point, and reaching its register_activation_hook() call
+ * in a SHORTINIT process means rebuilding the plugin-directory constants, which
+ * costs more than this whole request has to spend.
+ */
+require_once $solrengine_constants;
 require_once $solrengine_autoload;
 
-// SHORTINIT skips wp-settings.php, so the constants solrengine.php defines are
-// not defined. The classes below read SOLRENGINE_VERSION for the user agent.
-if ( ! defined( 'SOLRENGINE_VERSION' ) ) {
-	define( 'SOLRENGINE_VERSION', '0.10.1' );
-}
+/*
+ * The WordPress surface SolrEngine's services expect.
+ *
+ * SHORTINIT stops before these, and the alternative to loading them is editing
+ * the domain layer to avoid `wp_parse_url()` and `__()` — which would mean this
+ * endpoint's requirements dictating how the rest of the plugin is written. Three
+ * files and one global cost about 1.3ms measured, so the services stay as they
+ * are and this process brings itself up to their level instead.
+ *
+ * `l10n.php` and the text-domain registry give `__()` something to answer with:
+ * no translations are loaded here, so it returns the original string, which is
+ * the right answer for a message nobody will read.
+ *
+ * `http.php` is deliberately NOT among them. It would define
+ * `wp_remote_request()` without the WP_Http class behind it, and
+ * {@see \SolrEngine\Backend\Solr\HttpTransport} chooses its sender by asking
+ * whether that function exists — so loading it would route this request through
+ * an HTTP API that cannot answer.
+ */
+require_once ABSPATH . WPINC . '/l10n.php';
+require_once ABSPATH . WPINC . '/class-wp-textdomain-registry.php';
+require_once ABSPATH . WPINC . '/pomo/translations.php';
+require_once ABSPATH . WPINC . '/pomo/entry.php';
 
-if ( ! defined( 'SOLRENGINE_PLUGIN_DIR' ) ) {
-	define( 'SOLRENGINE_PLUGIN_DIR', $solrengine_dir );
+if ( ! isset( $GLOBALS['wp_textdomain_registry'] ) ) {
+	$GLOBALS['wp_textdomain_registry'] = new WP_Textdomain_Registry();
 }
 
 /**
  * Resolve the site being searched.
  *
- * On multisite the blog is chosen by the host and path WordPress itself
- * resolved during SHORTINIT, never by a request parameter: a `site` argument
- * would let a caller read another site's index, and the site id is the filter
- * that keeps tenants apart.
+ * On multisite the blog is chosen by the host and path WordPress itself resolved
+ * during SHORTINIT, never by a request parameter: a `site` argument would let a
+ * caller read another site's index, and the site id is the filter that keeps
+ * tenants apart.
  */
 $solrengine_site = function_exists( 'get_current_blog_id' ) ? (int) get_current_blog_id() : 1;
 

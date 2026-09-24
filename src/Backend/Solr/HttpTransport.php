@@ -12,7 +12,15 @@ use SolrEngine\Contracts\Result;
 use SolrEngine\Support\Credentials;
 
 /**
- * Sends requests to Solr over the WordPress HTTP API.
+ * Sends requests to Solr.
+ *
+ * This is the single place that decides what a Solr request looks like and what
+ * a reply means. Putting the bytes on the wire is delegated to a {@see Sender},
+ * which is the only part that varies by environment: {@see WpHttpSender} uses
+ * the WordPress HTTP API and is the default, {@see CurlSender} is used where
+ * there is no HTTP API to call, as during the `SHORTINIT` boot behind
+ * instant-search. Senders hold no policy, so there is no second copy of any of
+ * the rules below to keep in step.
  *
  * Deliberately small. SolrEngine uses a narrow slice of Solr's HTTP surface —
  * update, select, schema, ping, system info — all JSON in and JSON out, which
@@ -81,6 +89,13 @@ final class HttpTransport {
 	private $verify_tls;
 
 	/**
+	 * Puts requests on the wire.
+	 *
+	 * @var Sender
+	 */
+	private $sender;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Endpoint    $endpoint    Validated endpoint.
@@ -88,19 +103,33 @@ final class HttpTransport {
 	 * @param Logger      $logger      Logger.
 	 * @param int         $timeout     Seconds to wait for a response.
 	 * @param bool        $verify_tls  Whether to verify TLS certificates.
+	 * @param Sender|null $sender      Wire transport. Defaults to the WordPress
+	 *                                 HTTP API, falling back to cURL in a
+	 *                                 process that has none.
 	 */
 	public function __construct(
 		Endpoint $endpoint,
 		Credentials $credentials,
 		Logger $logger,
 		int $timeout = 10,
-		bool $verify_tls = true
+		bool $verify_tls = true,
+		?Sender $sender = null
 	) {
 		$this->endpoint    = $endpoint;
 		$this->credentials = $credentials;
 		$this->logger      = $logger;
 		$this->timeout     = max( 1, min( 120, $timeout ) );
 		$this->verify_tls  = $verify_tls;
+		$this->sender      = $sender ?? self::default_sender();
+	}
+
+	/**
+	 * The sender to use when the caller does not name one.
+	 *
+	 * @return Sender
+	 */
+	private static function default_sender(): Sender {
+		return WpHttpSender::is_available() ? new WpHttpSender() : new CurlSender();
 	}
 
 	/**
@@ -200,20 +229,18 @@ final class HttpTransport {
 		// worth parsing anyway. Never request anything else.
 		$url .= ( false === strpos( $url, '?' ) ? '?' : '&' ) . self::build_query( $query );
 
-		$args = array(
-			'method'      => $method,
-			'timeout'     => $this->timeout,
-			'redirection' => 0,
-			'sslverify'   => $this->verify_tls,
-			'headers'     => array( 'Accept' => 'application/json' ),
-			'user-agent'  => 'SolrEngine/' . SOLRENGINE_VERSION . '; ' . home_url( '/' ),
+		$headers = array(
+			'Accept'     => 'application/json',
+			'User-Agent' => self::user_agent(),
 		);
 
 		$auth = $this->authorization_header();
 
 		if ( '' !== $auth ) {
-			$args['headers']['Authorization'] = $auth;
+			$headers['Authorization'] = $auth;
 		}
+
+		$encoded = null;
 
 		if ( null !== $body ) {
 			$encoded = wp_json_encode( $body );
@@ -222,51 +249,57 @@ final class HttpTransport {
 				return Result::failure( 'unencodable_request', 'The request body could not be encoded as JSON.' );
 			}
 
-			$args['body']                    = $encoded;
-			$args['headers']['Content-Type'] = 'application/json';
+			$headers['Content-Type'] = 'application/json';
 		}
 
-		$started  = microtime( true );
-		$response = wp_remote_request( $url, $args );
-		$elapsed  = (int) round( ( microtime( true ) - $started ) * 1000 );
+		$started = microtime( true );
 
-		return $this->interpret( $response, $method, $url, $elapsed );
+		$sent = $this->sender->send(
+			$method,
+			$url,
+			$headers,
+			$encoded,
+			$this->timeout,
+			$this->verify_tls,
+			self::MAX_RESPONSE_BYTES
+		);
+
+		$elapsed = (int) round( ( microtime( true ) - $started ) * 1000 );
+
+		return $this->interpret( $sent, $method, $url, $elapsed );
 	}
 
 	/**
-	 * Turn a WordPress HTTP response into a Result.
+	 * Turn what the sender brought back into a Result.
 	 *
-	 * @param array<string,mixed>|\WP_Error $response Response or error.
-	 * @param string                        $method   HTTP method, for logging.
-	 * @param string                        $url      URL, for logging.
-	 * @param int                           $elapsed  Milliseconds taken.
+	 * @param Result $sent    The sender's result.
+	 * @param string $method  HTTP method, for logging.
+	 * @param string $url     URL, for logging.
+	 * @param int    $elapsed Milliseconds taken.
 	 * @return Result
 	 */
-	private function interpret( $response, string $method, string $url, int $elapsed ): Result {
-		if ( is_wp_error( $response ) ) {
-			// The prototype checked whether the body was false, which it never
-			// is, and so reported every network failure as a success.
-			$message = $response->get_error_message();
-
+	private function interpret( Result $sent, string $method, string $url, int $elapsed ): Result {
+		if ( $sent->is_failure() ) {
 			$this->logger->warning(
 				'Solr request failed',
 				array(
 					'method' => $method,
 					'url'    => $url,
-					'error'  => $message,
+					'error'  => $sent->message(),
 					'ms'     => $elapsed,
 				)
 			);
 
 			return Result::failure(
-				$this->classify_wp_error( $message ),
-				$message,
+				$sent->code(),
+				$sent->message(),
 				array( 'ms' => $elapsed )
 			);
 		}
 
-		$status = (int) wp_remote_retrieve_response_code( $response );
-		$body   = (string) wp_remote_retrieve_body( $response );
+		$received = (array) $sent->value( array() );
+		$status   = (int) ( $received['status'] ?? 0 );
+		$body     = (string) ( $received['body'] ?? '' );
 
 		if ( strlen( $body ) > self::MAX_RESPONSE_BYTES ) {
 			return Result::failure( 'response_too_large', 'The server returned more data than SolrEngine will read.' );
@@ -322,33 +355,6 @@ final class HttpTransport {
 	}
 
 	/**
-	 * Map a WordPress HTTP error message to a stable code.
-	 *
-	 * The message text varies by transport and by PHP version, so callers must
-	 * never branch on it. They branch on these codes instead.
-	 *
-	 * @param string $message Error message.
-	 * @return string
-	 */
-	private function classify_wp_error( string $message ): string {
-		$lower = strtolower( $message );
-
-		if ( false !== strpos( $lower, 'timed out' ) || false !== strpos( $lower, 'timeout' ) ) {
-			return 'timeout';
-		}
-
-		if ( false !== strpos( $lower, 'certificate' ) || false !== strpos( $lower, 'ssl' ) ) {
-			return 'tls_failed';
-		}
-
-		if ( false !== strpos( $lower, 'resolve' ) ) {
-			return 'unresolvable';
-		}
-
-		return 'unreachable';
-	}
-
-	/**
 	 * Pull a useful message out of a Solr error response.
 	 *
 	 * @param mixed $decoded Decoded body.
@@ -361,6 +367,25 @@ final class HttpTransport {
 		}
 
 		return sprintf( 'Solr returned HTTP %d.', $status );
+	}
+
+	/**
+	 * The User-Agent Solr sees.
+	 *
+	 * Identifies the site so an administrator reading Solr's access log can tell
+	 * which one is querying. `home_url()` is unavailable during a `SHORTINIT`
+	 * boot, where the stored option gives the same answer.
+	 *
+	 * @return string
+	 */
+	private static function user_agent(): string {
+		if ( function_exists( 'home_url' ) ) {
+			$site = home_url( '/' );
+		} else {
+			$site = (string) get_option( 'siteurl', '' );
+		}
+
+		return 'SolrEngine/' . SOLRENGINE_VERSION . ( '' === $site ? '' : '; ' . $site );
 	}
 
 	/**

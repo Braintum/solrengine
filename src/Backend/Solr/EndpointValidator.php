@@ -116,7 +116,12 @@ final class EndpointValidator {
 			return Result::failure( 'empty_url', __( 'Enter the address of your Solr server.', 'solrengine' ) );
 		}
 
-		$parts = wp_parse_url( $url );
+		// parse_url(), not wp_parse_url(): the wrapper lives in http.php, which
+		// the SHORTINIT process behind instant-search does not load — and loading
+		// it there would make wp_remote_request() appear to exist while the HTTP
+		// API behind it does not. The wrapper only ever patched a PHP bug fixed
+		// long before this plugin's 7.4 floor.
+		$parts = parse_url( $url ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url
 
 		if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
 			return Result::failure( 'unparseable', __( 'That address could not be understood. It should look like https://solr.example.com:8983/solr', 'solrengine' ) );
