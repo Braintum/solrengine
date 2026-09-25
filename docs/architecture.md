@@ -42,7 +42,7 @@ construction — the suite could not run otherwise.
 | Layer | Where | How to recognise it |
 | --- | --- | --- |
 | Domain | `Contracts/`, `Schema/`, `Language/`, most of `Search/`, the pure half of `Documents/` | In the unit suite. Constructor takes values or interfaces. No `get_option`, no `WP_Post`, no `$wpdb` |
-| Integration | `Integration/`, `Admin/`, `Rest/`, `Cli/`, most of `Indexing/`, `Support/Config`, `Support/Credentials`, `Support/Tables` | Registers hooks, reads options, handles `WP_Post`/`WP_Query`, knows WooCommerce |
+| Integration | `Integration/`, `Admin/`, `Rest/`, `Cli/`, most of `Indexing/`, `Support/Config`, `Support/Credentials`, `Support/Tables`, and the WordPress-backed seams `Support/WpViewer`, `Support/ObjectCache`, `Support/OptionBreaker`, `Support/Upgrade` | Registers hooks, reads options, handles `WP_Post`/`WP_Query`, knows WooCommerce |
 | Backend adapters | `Backend/Solr/`, `Backend/Memory/` | Implements the four backend contracts. Only place that speaks Solr |
 
 Three borderline cases are worth knowing, because each one marks where a seam
@@ -51,8 +51,12 @@ was deliberately placed:
 - **`Documents/` is split.** `DocumentFields`, `MetaAllowlist` and `TermPaths`
   are pure and unit-tested; `PostDocumentBuilder` and `MetaKeys` read posts and
   the database. The mapping rules are domain; reading WordPress is not.
-- **`Search/` is split.** Nine of eleven classes are pure. `SearchService`
-  (caching, circuit breaker) and `FacetLabeller` (resolves term names) are not.
+- **`Search/` is split.** Eleven of thirteen classes are pure. The two that are
+  not both resolve WordPress terms: `FacetLabeller` (turns term ids into names)
+  and `FacetSelection` (interprets a selected term). `SearchService` is in the
+  unit suite despite owning the cache and the circuit breaker, because it holds
+  neither: it is handed a `Cache`, a `Breaker` and a `Viewer`, and calls no
+  WordPress function of its own beyond firing its hooks.
 - **`Schema/AppliedSchema` is domain despite storing state**, because it is
   handed a `Config` rather than calling `get_option()` itself, and its verdict
   logic is a pure static function with its own tests. That is what the seam looks
@@ -61,8 +65,13 @@ was deliberately placed:
 ## What the code contains
 
 ```
-solrengine.php               Requirement gate. Parses on PHP 5.6 by necessity:
-                             it is what reports that PHP is too old
+solrengine.php               Plugin entry point and requirement gate. Parses on
+                             PHP 5.6 by necessity: it is what reports that PHP
+                             is too old
+instant.php                  Second entry point. Answers autocomplete on a
+                             SHORTINIT boot, bypassing the REST API
+constants.php                Version, paths and schema contract version. Shared
+                             by both entry points, so they cannot disagree
 src/Bootstrap.php            Composition root. The only class that knows how
                              anything is constructed. Start reading here
 
@@ -79,10 +88,16 @@ src/Contracts/               PUBLIC API. Interfaces and immutable values
   LifecycleBackend           Builds a replacement index and switches to it
   LanguageProvider           Where a site's languages come from
   JobQueue / Logger          Defers work; records what happened
+  Viewer                     Whether the request belongs to a signed-in user
+  Cache                      Where a result set is kept for a while
+  Breaker                    Whether the backend is currently worth calling
 
-src/Support/                 Container, Config, Credentials, Encryption, Tables
+src/Support/                 Container, Config, Credentials, Encryption, Tables,
+                             Upgrade, and the implementations of Viewer, Cache
+                             and Breaker
 src/Backend/BackendRegistry  Which backends exist, which indexes, which searches
-src/Backend/Solr/            Endpoint validator, HTTP transport, the adapter
+src/Backend/Solr/            Endpoint validator, HTTP transport and its two
+                             senders, the adapter
 src/Backend/Memory/          Second adapter. Proves the contracts hold without
                              Solr; reports itself managed. Development only
 src/Documents/               WordPress object -> Document
@@ -94,12 +109,13 @@ src/Integration/WooCommerce/ Products, shop queries, catalogue facets
 src/Integration/Multilingual/ WPML, Polylang, core locale
 src/Language/                Language tags; the site's languages
 src/Multisite/               Network configuration and this site's scope
-src/Rest/                    search, facets, suggest, status
+src/Rest/                    search, facets, suggest, status, and the
+                             instant-search endpoint behind instant.php
 src/Admin/                   Connection, Dashboard, Content, Search, Tools, Network
 src/Cli/                     Every WP-CLI command
 ```
 
-## The two paths through it
+## The three paths through it
 
 Everything else is detail around these.
 
@@ -140,6 +156,37 @@ Hooking the query layer rather than the template layer is what keeps themes,
 block themes, page builders and WooCommerce loops working — none of them can tell
 the difference.
 
+**Autocomplete.** The same service, reached without the REST API, because
+`rest_api_init` is where every active plugin registers its routes and that cost
+is paid before any callback runs.
+
+```
+instant.php                        SHORTINIT: database and options only.
+                                   No plugins, no theme, no REST server
+  -> Bootstrap::services()         the same factories boot() registers,
+                                   with no hooks attached
+  -> Rest\InstantEndpoint          reads q and limit; contributes no search logic
+  -> Search\SearchService          cache, circuit breaker, hooks
+  -> SearchBackend::suggest
+  -> Search\SuggestTranslator      the site scope and visibility filter
+  -> HttpTransport -> CurlSender
+  -> Search\SuggestionParser       documents -> Suggestions
+  -> Search\SuggestPayload         the JSON both endpoints return
+```
+
+`Bootstrap::services()` is what makes this one composition rather than two.
+Registration is lazy, so naming every factory costs nothing and the endpoint pays
+only for what it resolves. Two factories are overridden, and only because their
+definitions assume a boot this process did not perform: `search.taxonomies`,
+since nothing has run `init`, and `viewer`, since there is no user stack to ask.
+
+`Backend\Solr\Sender` exists for the same reason. Putting bytes on the wire is
+the only part of talking to Solr that differs by environment, so it is the only
+part with two implementations — `WpHttpSender` through the WordPress HTTP API,
+which is the default wherever it exists, and `CurlSender` where there is no HTTP
+API to call. Everything that decides what to send and what a reply means lives in
+`HttpTransport`, once.
+
 ## Three decisions visible in the code
 
 **Failure is a value, not an exception.** Every backend call returns `Result`.
@@ -156,7 +203,10 @@ model works unchanged under either multisite topology.
 
 **Construction is lazy.** Registering a service builds nothing. A request that
 never searches and never saves a post pays for `Bootstrap` and nothing else.
-`ContainerTest::test_registering_does_not_construct()` guards this.
+`ContainerTest::test_registering_does_not_construct()` guards this. It is also
+what lets `instant.php` share the composition root instead of assembling its own:
+registering every factory and resolving one of them is measured in tenths of a
+millisecond.
 
 ## Extension points
 

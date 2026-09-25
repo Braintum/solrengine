@@ -53,7 +53,7 @@ cache holds results, not who asked.
 
 | Stored | Where |
 | --- | --- |
-| Connection settings and preferences | Options, never autoloaded |
+| Connection settings and preferences | Options |
 | Your Solr password, encrypted | An option, or better, `wp-config.php` |
 | The last fifty indexing runs and their failures | Two custom tables, pruned automatically |
 | The list of custom field keys your site uses | A transient, for an hour |

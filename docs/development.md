@@ -155,8 +155,14 @@ next free block when adding a suite.
 ## Layout
 
 ```
-solrengine.php      Bootstrap. Must parse on old PHP: it is what tells a user
-                    their PHP is too old, so no modern syntax belongs in it.
+solrengine.php      Plugin entry point. Must parse on old PHP: it is what tells
+                    a user their PHP is too old, so no modern syntax belongs in
+                    it.
+instant.php         Second entry point, reached directly over HTTP. Answers
+                    autocomplete on a SHORTINIT boot. Same rule about old PHP.
+constants.php       Version, paths, schema contract version. Included by both
+                    entry points and needs no WordPress, so neither has to
+                    define them twice.
 src/Contracts/      Public API. Interfaces and value objects. No WordPress,
                     no network, no Solr vocabulary.
 src/Support/        Container, configuration, credentials, logging.
@@ -191,7 +197,30 @@ Times are Unix timestamps in `bigint` columns rather than `datetime`. A
 `datetime` column carries no timezone, so every reader has to know which one the
 writer meant, and WordPress has three plausible answers.
 
-Everything else lives in options, and nothing SolrEngine writes is autoloaded.
+## Options
+
+Everything else lives in options. Three are autoloaded, and the rest are not:
+
+| Option | Autoloaded | Holds |
+| --- | --- | --- |
+| `solrengine_connection` | yes | Endpoint, collection, timeouts, TLS |
+| `solrengine_index_config` | yes | What is indexed, and the search settings |
+| `solrengine_state` | yes | Applied schema version and fingerprint, reindex notice |
+| `solrengine_credentials` | no | Encrypted, and read only when a request talks to Solr |
+| `solrengine_breaker` | no | Circuit breaker state. Absent on a healthy site |
+| everything else | no | Versions, install time, sync progress |
+
+The three autoloaded groups are read by every request that searches, so leaving
+them out of `alloptions` means a separate `SELECT` each on a request a visitor is
+waiting on. They hold a few hundred bytes between them. `Config::set()` writes
+them autoloaded and `Config::autoload_options()` names them.
+
+`Support\Upgrade` corrects rows written before that, gated on the stored plugin
+version and hooked to `admin_init` only — nothing there may cost a visitor a
+query. It is the counterpart of `Tables::ensure()` for options, and the place a
+future option migration goes. Note that `update_option()` cannot do this job: it
+returns early when the value is unchanged and never reaches its autoload
+argument, so `wp_set_options_autoload()` is what actually moves the flag.
 
 ## Conventions
 

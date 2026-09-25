@@ -195,6 +195,49 @@ Two leakage paths that return no documents and are easy to miss:
   On a shared multisite collection it is the only thing separating tenants, so
   it is treated as a security control rather than a scoping convenience.
 
+## The instant-search entry point
+
+`instant.php` is reachable directly over HTTP and answers autocomplete on a
+`SHORTINIT` boot. Being a second door into the plugin, it is worth stating what it
+does and does not rely on.
+
+**It reads, and only reads.** One prefix query for at most twenty short rows. No
+parameter reaches Solr as syntax, no state is written, and there is nothing to
+forge — which is why it carries no nonce.
+
+**The query's guarantees are the query's, not the bootstrap's.** The site scope
+and the public-visibility filter are built by `SuggestTranslator` on the server
+and are unreachable from the query string. Typed text is bound as a Solr
+parameter. The endpoint is the validated one from configuration, and credentials
+are decrypted through the same `Encryption` from the same salts.
+
+**The site is resolved by WordPress, never by a parameter.** There is no `site`
+argument. On multisite the blog comes from the host and path WordPress itself
+resolved, because `se_i_site` is what separates tenants.
+
+**`CookieViewer` is not authentication.** In a `SHORTINIT` process there is no
+user stack, so the presence of a `wordpress_logged_in_` cookie is noticed and
+never validated. It grants nothing: its only consequence is whether one
+suggestion list may be shared in the cache. A forged or expired cookie makes it
+answer "signed in", which costs the sender a cache entry and gains them nothing.
+What matters is the direction of the error — a signed-in user is never mistaken
+for anonymous, which is the mistake that would leak one person's view into
+another's cache.
+
+**No path comes from the request.** `wp-load.php` is found by walking up from
+`__FILE__`, never from `DOCUMENT_ROOT` or any other attacker-influenced value,
+because a path taken from a request is how a file-inclusion bug gets written.
+
+**A broken install answers an empty list.** A missing autoloader or an
+unconfigured backend returns `{"suggestions":[]}` rather than a fatal or a stack
+trace, and error messages never echo the Solr host.
+
+One thing this endpoint does not currently do that the REST route does: **it is
+not rate limited.** `RateLimiter` runs on the REST routes only. Note also that
+rate limiting depends on `wp_cache_*` outliving the request, so it is only
+effective on a site with a persistent object cache — without one, the counter is
+per-request memory on either route.
+
 ## Reporting a vulnerability
 
 Please report privately rather than in a public issue.

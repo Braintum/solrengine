@@ -27,7 +27,7 @@ it arrived in. Each one is public API from 1.0.
 
 ### `solrengine_allowed_ports`
 
-Filter · since 0.1.0 · `src/Bootstrap.php:336`
+Filter · since 0.1.0 · `src/Bootstrap.php:387`
 
 Ports SolrEngine will connect to.
 
@@ -41,7 +41,7 @@ than a setting: a deliberate act by a site owner, in code.
 
 ### `solrengine_booted`
 
-Action · since 0.1.0 · `src/Bootstrap.php:172`
+Action · since 0.1.0 · `src/Bootstrap.php:189`
 
 Fires once SolrEngine has registered its services.
 
@@ -191,7 +191,7 @@ registered here cannot be filtered on through the API, by design.
 
 ### `solrengine_search_query`
 
-Filter · since 0.4.0 · `src/Search/SearchService.php:134`
+Filter · since 0.4.0 · `src/Search/SearchService.php:159`
 
 Filters a query before it reaches the backend.
 
@@ -201,7 +201,7 @@ Filters a query before it reaches the backend.
 
 ### `solrengine_search_results`
 
-Filter · since 0.4.0 · `src/Search/SearchService.php:172`
+Filter · since 0.4.0 · `src/Search/SearchService.php:197`
 
 Filters results before they are returned.
 
@@ -212,7 +212,7 @@ Filters results before they are returned.
 
 ### `solrengine_suggest_query`
 
-Filter · since 0.7.0 · `src/Search/SearchService.php:215`
+Filter · since 0.7.0 · `src/Search/SearchService.php:240`
 
 Filters an autocomplete query before it reaches the backend.
 
@@ -226,7 +226,7 @@ every path that reads the index, not only the results page.
 
 ### `solrengine_suggestions`
 
-Filter · since 0.5.0 · `src/Search/SearchService.php:256`
+Filter · since 0.5.0 · `src/Search/SearchService.php:281`
 
 Filters suggestions before they are returned.
 

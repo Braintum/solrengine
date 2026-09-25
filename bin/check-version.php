@@ -2,10 +2,15 @@
 /**
  * Verify that every declared version agrees.
  *
- * The plugin header, the SOLRENGINE_VERSION constant and the readme.txt stable
- * tag must all match. They drift silently otherwise, and a mismatched stable
- * tag is one of the more common reasons a WordPress.org release ships the wrong
- * code. Enforced in CI rather than by discipline.
+ * Three declarations must agree: the plugin header in solrengine.php, the
+ * SOLRENGINE_VERSION constant in constants.php, and the readme.txt stable tag.
+ * They drift silently otherwise, and a mismatched stable tag is one of the more
+ * common reasons a WordPress.org release ships the wrong code. Enforced in CI
+ * rather than by discipline.
+ *
+ * The constant lives in constants.php rather than beside the header because
+ * instant.php needs it too, and a second define() is exactly the kind of drift
+ * this script exists to catch.
  *
  * Usage: php bin/check-version.php
  *
@@ -17,6 +22,7 @@ declare( strict_types=1 );
 $root = dirname( __DIR__ );
 
 $plugin_src = (string) file_get_contents( $root . '/solrengine.php' );
+$constants  = (string) file_get_contents( $root . '/constants.php' );
 $readme     = (string) file_get_contents( $root . '/readme.txt' );
 
 $found = array();
@@ -25,7 +31,7 @@ if ( preg_match( '/^\s*\*\s*Version:\s*(\S+)\s*$/m', $plugin_src, $m ) ) {
 	$found['plugin header'] = $m[1];
 }
 
-if ( preg_match( "/define\(\s*'SOLRENGINE_VERSION',\s*'([^']+)'\s*\)/", $plugin_src, $m ) ) {
+if ( preg_match( "/define\(\s*'SOLRENGINE_VERSION',\s*'([^']+)'\s*\)/", $constants, $m ) ) {
 	$found['SOLRENGINE_VERSION'] = $m[1];
 }
 

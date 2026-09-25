@@ -148,6 +148,41 @@ It attaches to the search field your theme already renders, so in most cases
 yes, with no changes. Themes with unusual markup can point SolrEngine at their
 own selector with a filter.
 
+= Why does autocomplete request a file instead of the REST API? =
+
+Because the REST API is too slow for something that fires on every keystroke.
+A WordPress REST request loads every active plugin before your search plugin is
+reached. On a WooCommerce site that measured around 830ms of other plugins
+booting for 67ms of actual searching.
+
+So autocomplete is answered by instant.php in the plugin folder, which loads
+WordPress in a reduced mode: the database and your settings, no plugins and no
+theme. It runs the same search code and returns the same data, typically in a
+few tens of milliseconds instead of most of a second.
+
+It is a read-only endpoint. It returns the same public titles the search results
+page would, applies the same privacy rules, and writes nothing. If you would
+rather autocomplete went through the REST API, one filter switches it back:
+
+`add_filter( 'solrengine_instant_fast_path', '__return_false' );`
+
+= Autocomplete still feels slow. What should I check? =
+
+Two things outside this plugin matter more than anything inside it.
+
+**PHP OPcache should be enabled.** Without it PHP recompiles every file on every
+request. On a WooCommerce site that is over 20MB of code per request and can add
+seconds to every page, search or not. Most managed hosts enable it; local
+development setups often do not.
+
+**Your database should be on the same machine as your web server**, or as close
+to it as you can manage. Every request makes several small database queries, and
+a database across a network — especially over wireless — adds its round trip to
+each one.
+
+A persistent object cache such as Redis helps on top of both, because visitors
+often type the same few prefixes.
+
 = Can I use the search API from my own front end? =
 
 Yes. There is a REST endpoint at `/wp-json/solrengine/v1/search`. It accepts

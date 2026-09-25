@@ -127,6 +127,19 @@ The limit is deliberately lower than `/search`: a list longer than a screenful i
 not a list anybody reads, and every row costs latency on a request that fires while
 someone is still typing.
 
+**This is not the address the search field calls.** Autocomplete is answered by
+`instant.php`, outside the REST API, because a REST request is dispatched through
+`rest_api_init` — where every active plugin registers its routes — and that cost
+is paid before any callback runs. Both return the same JSON from the same service;
+the difference is how much of WordPress is loaded around it. See
+[search.md](search.md) for the measurements, what the fast path gives up, and how
+to turn it off.
+
+This route remains the documented, hookable one, and is unchanged: it runs on a
+full boot, so `solrengine_suggest_query` and `solrengine_suggestions` fire and
+`post_type` narrowing works. It is also the route to use from anything that is not
+this plugin's own search field.
+
 ## `GET /status`
 
 Requires `manage_options`. Reports the plugin version, the required and applied
