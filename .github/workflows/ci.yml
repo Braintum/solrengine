@@ -37,6 +37,11 @@ jobs:
       # them. This step also fails when a hook has no docblock, no @since, or
       # documents a different number of parameters than it passes — hooks are
       # public API from 1.0, and an undocumented one has no contract.
+      # The narrow version of the direct-access check the Plugin Check job has to
+      # suppress. See the comment on ignore-codes in that job.
+      - name: Shipped files refuse direct access
+        run: php bin/check-direct-access.php
+
       - name: Hook reference is current and hooks are documented
         run: php bin/generate-hooks.php --check
 
@@ -249,7 +254,11 @@ jobs:
       - uses: wordpress/plugin-check-action@v1
         with:
           build-dir: ./build/solrengine
-          # One suppression, and the same position phpcs.xml.dist already takes
+          # Two suppressions. Recorded rather than hidden: WordPress.org's own
+          # review runs both checks unsuppressed, and these are the answers if
+          # they ask.
+          #
+          # ExceptionNotEscaped — the same position phpcs.xml.dist already takes
           # for this sniff: an exception message is logged, not rendered, and
           # escaping it mangles the message for whoever has to read it.
           #
@@ -260,6 +269,24 @@ jobs:
           # report a typo in a service name. Verified by trying it: two unit
           # tests went red immediately.
           #
-          # Recorded rather than hidden: WordPress.org's own review runs the
-          # unsuppressed check, and this is the answer if they ask.
-          ignore-codes: WordPress.Security.EscapeOutput.ExceptionNotEscaped
+          # missing_direct_file_access_protection — instant.php is requested
+          # directly over HTTP by design. It is the autocomplete endpoint, and it
+          # loads WordPress itself with SHORTINIT because dispatching through
+          # rest_api_init costs ~830ms of other plugins booting before the
+          # callback runs. An `if ( ! defined( 'ABSPATH' ) ) exit;` there would
+          # exit before the line that defines ABSPATH.
+          #
+          # The check has no per-file exemption for this — read
+          # Direct_File_Access_Check::is_valid_for_direct_access(), which only
+          # excuses files containing no procedural code — so the suppression is
+          # repository-wide, which is blunter than the problem. bin/check-direct-
+          # access.php restores the narrow version: it fails when any shipped PHP
+          # file other than instant.php lacks a guard, so this suppression cannot
+          # quietly cover a second file later.
+          #
+          # What instant.php relies on instead of a guard is in docs/security.md:
+          # it is read-only, resolves the site from WordPress rather than from a
+          # parameter, finds wp-load.php by walking up from __FILE__ rather than
+          # from any request value, and applies the same site scope and
+          # visibility filter as every other read of the index.
+          ignore-codes: WordPress.Security.EscapeOutput.ExceptionNotEscaped,missing_direct_file_access_protection

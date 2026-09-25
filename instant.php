@@ -121,6 +121,10 @@ require_once ABSPATH . WPINC . '/pomo/translations.php';
 require_once ABSPATH . WPINC . '/pomo/entry.php';
 
 if ( ! isset( $GLOBALS['wp_textdomain_registry'] ) ) {
+	// WordPress's own global, populated exactly as wp-settings.php populates it.
+	// Not a global this plugin defines, so the prefix rule does not apply: naming
+	// it anything else would leave __() with nothing to consult.
+	// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound
 	$GLOBALS['wp_textdomain_registry'] = new WP_Textdomain_Registry();
 }
 

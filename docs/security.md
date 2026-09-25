@@ -232,6 +232,15 @@ because a path taken from a request is how a file-inclusion bug gets written.
 unconfigured backend returns `{"suggestions":[]}` rather than a fatal or a stack
 trace, and error messages never echo the Solr host.
 
+**It is the one file in the package without a direct-access guard**, and that is
+deliberate rather than an oversight: `if ( ! defined( 'ABSPATH' ) ) exit;` here
+would exit before the line that loads WordPress and defines `ABSPATH`. Plugin
+Check has no per-file exemption for a file that is meant to answer a request, so
+the workflow suppresses that check and `bin/check-direct-access.php` replaces it
+with the narrow rule — every other shipped PHP file must guard or must contain
+nothing that runs when loaded, and this file is named as the single exception. A
+second unguarded file cannot appear without failing CI.
+
 One thing this endpoint does not currently do that the REST route does: **it is
 not rate limited.** `RateLimiter` runs on the REST routes only. Note also that
 rate limiting depends on `wp_cache_*` outliving the request, so it is only

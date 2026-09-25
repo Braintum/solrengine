@@ -19,6 +19,12 @@
  * @package SolrEngine
  */
 
+// Both includers load WordPress before reaching this file: solrengine.php is a
+// plugin, and instant.php requires wp-load.php first.
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 if ( ! defined( 'SOLRENGINE_VERSION' ) ) {
 	define( 'SOLRENGINE_VERSION', '0.10.1' );
 }

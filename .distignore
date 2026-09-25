@@ -42,6 +42,10 @@ docs
 # just above. Shipping it would put a page of dead links in the package.
 # readme.txt is the one users and the directory read, and that does ship.
 README.md
+# Instructions for contributors and for coding agents. Neither belongs in a
+# release, and Plugin Check refuses unexpected markdown in the plugin root.
+AGENTS.md
+CLAUDE.md
 assets/src
 assets/README.md
 # Placeholders that exist so git tracks an otherwise empty directory. They have

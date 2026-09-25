@@ -52,7 +52,8 @@
 			"@lint",
 			"@analyse",
 			"@test",
-			"php bin/generate-hooks.php --check"
+			"php bin/generate-hooks.php --check",
+			"php bin/check-direct-access.php"
 		]
 	},
 	"scripts-descriptions": {
@@ -62,6 +63,6 @@
 		"test": "Run the unit test suite (no WordPress or Solr required).",
 		"test:integration": "Run the WordPress integration test suite.",
 		"hooks": "Regenerate docs/hooks.md from the docblocks above each hook.",
-		"check": "Run lint, static analysis, unit tests and the hook reference check."
+		"check": "Run lint, static analysis, unit tests, the hook reference check and the direct-access check."
 	}
 }
