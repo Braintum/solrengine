@@ -199,6 +199,10 @@ final class ConnectionScreen extends Screen {
 
 		$this->config->set( 'search.enabled', ! empty( $_POST['search_enabled'] ) );
 		$this->config->set( 'search.instant_enabled', ! empty( $_POST['instant_enabled'] ) );
+		$this->config->set(
+			'search.instant_mode',
+			isset( $_POST['instant_mode'] ) && 'suggest' === sanitize_key( wp_unslash( $_POST['instant_mode'] ) ) ? 'suggest' : 'modal'
+		);
 		$this->config->set( 'search.shop_enabled', ! empty( $_POST['shop_enabled'] ) );
 
 		$notice = 'saved';
@@ -460,10 +464,26 @@ final class ConnectionScreen extends Screen {
 									value="1"
 									<?php checked( $this->config->get_bool( 'search.instant_enabled' ) ); ?>
 								/>
-								<?php esc_html_e( 'Suggest results as visitors type', 'solrengine' ); ?>
+								<?php esc_html_e( 'Show results as visitors type', 'solrengine' ); ?>
 							</label>
+							<fieldset class="solrengine-instant-mode">
+								<legend class="screen-reader-text"><?php esc_html_e( 'How instant search appears', 'solrengine' ); ?></legend>
+								<?php $solrengine_mode = $this->config->get_string( 'search.instant_mode', 'modal' ); ?>
+								<p>
+									<label>
+										<input type="radio" name="instant_mode" value="modal" <?php checked( 'suggest' !== $solrengine_mode ); ?> />
+										<?php esc_html_e( 'Search popup: results with images, prices and content-type tabs', 'solrengine' ); ?>
+									</label>
+								</p>
+								<p>
+									<label>
+										<input type="radio" name="instant_mode" value="suggest" <?php checked( 'suggest', $solrengine_mode ); ?> />
+										<?php esc_html_e( 'Suggestion list: matching titles under the search field', 'solrengine' ); ?>
+									</label>
+								</p>
+							</fieldset>
 							<p class="description">
-								<?php esc_html_e( 'Attaches a suggestion list to the search field your theme already renders. Works independently of the setting above, so you can try it before switching search over.', 'solrengine' ); ?>
+								<?php esc_html_e( 'Attaches to the search field your theme already renders: clicking it, typing into it or pressing its button opens the popup. Works independently of the setting above, so you can try it before switching search over. The popup\'s markup can be overridden from your theme.', 'solrengine' ); ?>
 							</p>
 						</td>
 					</tr>

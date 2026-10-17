@@ -148,9 +148,42 @@ It attaches to the search field your theme already renders, so in most cases
 yes, with no changes. Themes with unusual markup can point SolrEngine at their
 own selector with a filter.
 
+= What is the search popup? =
+
+One of two ways instant search can appear, chosen under SolrEngine → Settings.
+Clicking your theme's search field, typing into it or pressing its search button
+opens a popup, as wide as your site, that shows results as visitors type, with
+pictures, product prices and a tab for each kind of content — posts, pages,
+products — with how many matches each has. The All tab shows a row of results for
+each kind, and each kind's own tab keeps loading more as the visitor scrolls. Pressing Enter, or "View all results", goes to your theme's
+normal results page. The other choice is a plain list of matching titles under
+the search field.
+
+The popup does not open just because someone tabs onto the field with the
+keyboard, it can be used entirely from the keyboard, and it works with screen
+readers.
+
+= Can I change how the search popup looks? =
+
+Yes. Its colours, corner radius and width are CSS custom properties your theme
+can set. To change the markup, copy a file from the plugin's `templates` folder
+into a `solrengine` folder in your theme and edit the copy — the same way
+WooCommerce templates are overridden. A child theme's copy wins over its parent's.
+
+Product prices in the popup are formatted in your store's currency format from
+the price saved when the product was last indexed. They can differ from the
+product page for customers in another tax region or with special pricing. If that
+matters for your store, remove the price from your copy of
+`search-modal/result-product.php`.
+
+= Does the search popup show "Powered by SolrEngine"? =
+
+No, not unless you turn it on with the `solrengine_search_modal_args` filter.
+
 = Why does autocomplete request a file instead of the REST API? =
 
-Because the REST API is too slow for something that fires on every keystroke.
+The suggestion list and the search popup both do this, for the same reason:
+the REST API is too slow for something that fires on every keystroke.
 A WordPress REST request loads every active plugin before your search plugin is
 reached. On a WooCommerce site that measured around 830ms of other plugins
 booting for 67ms of actual searching.
@@ -161,8 +194,9 @@ theme. It runs the same search code and returns the same data, typically in a
 few tens of milliseconds instead of most of a second.
 
 It is a read-only endpoint. It returns the same public titles the search results
-page would, applies the same privacy rules, and writes nothing. If you would
-rather autocomplete went through the REST API, one filter switches it back:
+page would, applies the same privacy rules, and writes nothing. If your host
+blocks it, the search popup notices and uses the REST API instead. If you would
+rather both always went through the REST API, one filter switches them back:
 
 `add_filter( 'solrengine_instant_fast_path', '__return_false' );`
 
@@ -247,6 +281,22 @@ inside each one, with a link to each. `wp solrengine history --failures` shows
 the same list.
 
 == Changelog ==
+
+= 0.11.0 (unreleased) =
+* New: a search popup. Clicking the theme's search field or button opens a panel
+  that shows results as visitors type, with thumbnails, product prices, the
+  matched words highlighted, and a tab for each content type with its count.
+  All shows a row of cards per type; a type's tab loads more as you scroll.
+  Choose it, or the existing suggestion list, under Settings → Instant search.
+* The popup's markup is three templates a theme can override by copying them
+  into a `solrengine` folder, and its colours and sizes are CSS custom
+  properties.
+* New REST route `/solrengine/v1/instant`, also answered by the fast path, which
+  now falls back to REST on its own when a host blocks it.
+* New hooks: `solrengine_template`, `solrengine_search_modal_args`,
+  `solrengine_search_modal_triggers` and `solrengine_search_modal_width`.
+* The fast path is now rate limited when answering the popup, under the same
+  limit as the REST route.
 
 = 0.10.1 =
 * Documentation. Full references for the REST API, the command line, every hook,

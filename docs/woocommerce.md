@@ -44,6 +44,13 @@ The price on the page is always rendered by WooCommerce itself. Where a store
 displays tax-inclusive prices, a second field holds the price with the store's
 base tax rate applied.
 
+**One exception: the [search popup](search-modal.md#prices).** It shows indexed
+prices, formatted in the browser in the store's currency format, because the fast
+path that answers it loads no WooCommerce. Where the shop displays prices with
+tax, the amount is scaled by the ratio recorded at index time. A store that
+cannot accept the approximation removes the price element from its copy of
+`templates/search-modal/result-product.php`.
+
 The practical limit: price filter boundaries can differ from displayed prices
 for customers in another tax jurisdiction. Multi-currency is out of scope, and
 `solrengine_document` is where a multi-currency plugin would add its own fields.

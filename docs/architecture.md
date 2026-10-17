@@ -68,8 +68,11 @@ was deliberately placed:
 solrengine.php               Plugin entry point and requirement gate. Parses on
                              PHP 5.6 by necessity: it is what reports that PHP
                              is too old
-instant.php                  Second entry point. Answers autocomplete on a
-                             SHORTINIT boot, bypassing the REST API
+instant.php                  Second entry point. Answers autocomplete and the
+                             search popup on a SHORTINIT boot, bypassing the
+                             REST API
+templates/                   Front-end templates a theme overrides from
+                             yourtheme/solrengine/. Today: the search popup
 constants.php                Version, paths and schema contract version. Shared
                              by both entry points, so they cannot disagree
 src/Bootstrap.php            Composition root. The only class that knows how
@@ -103,13 +106,14 @@ src/Backend/Memory/          Second adapter. Proves the contracts hold without
 src/Documents/               WordPress object -> Document
 src/Indexing/                The write path, plus full sync, rebuild and history
 src/Schema/                  Contract definition, diff planner, exporter
-src/Search/                  The read path: translation, relevance, facets, cache
+src/Search/                  The read path: translation, relevance, facets, cache,
+                             and InstantResults, which answers the search popup
 src/Integration/WordPress/   Query substitution, hydration, filter UI
 src/Integration/WooCommerce/ Products, shop queries, catalogue facets
 src/Integration/Multilingual/ WPML, Polylang, core locale
 src/Language/                Language tags; the site's languages
 src/Multisite/               Network configuration and this site's scope
-src/Rest/                    search, facets, suggest, status, and the
+src/Rest/                    search, facets, suggest, instant, status, and the
                              instant-search endpoint behind instant.php
 src/Admin/                   Connection, Dashboard, Content, Search, Tools, Network
 src/Cli/                     Every WP-CLI command
@@ -179,6 +183,32 @@ Registration is lazy, so naming every factory costs nothing and the endpoint pay
 only for what it resolves. Two factories are overridden, and only because their
 definitions assume a boot this process did not perform: `search.taxonomies`,
 since nothing has run `init`, and `viewer`, since there is no user stack to ask.
+
+**The search popup** takes the same road with `mode=results`, and the same
+discipline: `instant.php` and `GET /solrengine/v1/instant` both call
+`Search\InstantResults::answer()`, which builds an ordinary `SearchQuery` and owns
+the response shape, so neither surface holds search logic and the browser cannot
+tell which replied. The popup prefers the fast path and switches to REST on its own
+if the fast path answers with anything but SolrEngine's JSON. Its markup is PHP
+templates rendered once per page — on a full boot, where the theme can override
+them — into `<template>` elements the script fills; see
+[search-modal.md](search-modal.md).
+
+```
+theme search field / button
+  -> assets/src/search-modal.js       <dialog>, debounce, abort, cache, fallback
+  -> instant.php?mode=results         or GET /solrengine/v1/instant
+  -> Rest\InstantEndpoint             | Rest\InstantResultsController
+       reads q, post_type; RateLimiter under the shared 'instant' bucket
+  -> Search\InstantResults            post_type facet + tagged post_type filter
+  -> Search\SearchService             cache, circuit breaker, hooks
+  -> SearchBackend::search -> QueryTranslator -> ... as for a results page
+```
+
+A third override exists in that process, for the popup: `rest.rate_limiter.viewer`
+becomes `AnonymousViewer`, because the cookie `CookieViewer` notices is not
+validated and a rate-limit exemption must not be for sale for the price of a
+forged cookie.
 
 `Backend\Solr\Sender` exists for the same reason. Putting bytes on the wire is
 the only part of talking to Solr that differs by environment, so it is the only

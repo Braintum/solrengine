@@ -1,12 +1,13 @@
 # REST API
 
-Four endpoints under `solrengine/v1`. Three are public and serve content a
+Five endpoints under `solrengine/v1`. Four are public and serve content a
 visitor can already read; one requires a capability.
 
 ```
 GET /wp-json/solrengine/v1/search      documents, totals and optional facet counts
 GET /wp-json/solrengine/v1/facets      facet counts only, no documents
 GET /wp-json/solrengine/v1/suggest     autocomplete
+GET /wp-json/solrengine/v1/instant     the search popup: results and per-type counts
 GET /wp-json/solrengine/v1/status      health and configuration (manage_options)
 ```
 
@@ -140,6 +141,54 @@ full boot, so `solrengine_suggest_query` and `solrengine_suggestions` fire and
 `post_type` narrowing works. It is also the route to use from anything that is not
 this plugin's own search field.
 
+## `GET /instant`
+
+Since 0.11.0. What the [search popup](search-modal.md) shows: a count per
+content type, and either one short section per type (All) or a page of 24
+results from one type.
+
+| Parameter | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `q` | string | `''` | Maximum 200 characters. Fewer than 2 returns an empty body without asking Solr |
+| `post_type` | string | `''` | One indexed post type, or empty for all. An unknown type reads as all |
+| `page` | integer | `1` | A type tab's page. Ignored on All. Below 1 reads as 1, and paging stops at the 1,000th result |
+
+```json
+{
+  "query": "lamp",
+  "post_type": "",
+  "total": 5,
+  "all": 5,
+  "counts": { "product": 2, "page": 2, "post": 1 },
+  "page": 1,
+  "per_page": 4,
+  "has_more": false,
+  "results": [],
+  "sections": [
+    { "post_type": "product", "total": 2, "results": [
+      { "id": 12, "type": "post", "post_type": "product", "title": "…", "excerpt": "…",
+        "url": "…", "thumbnail": "…", "date": "…", "author": "…",
+        "price": { "current": 89, "regular": 110 } }
+    ] },
+    { "post_type": "page", "total": 2, "results": [ "…" ] },
+    { "post_type": "post", "total": 1, "results": [ "…" ] }
+  ],
+  "took_ms": 41,
+  "strategy": "standard"
+}
+```
+
+With `post_type` set, `sections` is empty and `results` holds the page asked for;
+`has_more` says whether another follows. `counts` is unaffected by `post_type`: the tab is applied as the tagged
+`post_type` filter, which the `post_type` facet excludes from its own counts.
+`price` appears only on documents that carry one; what each of its keys means is
+in [search-modal.md](search-modal.md#response).
+
+Deliberately narrower than `/search`. The popup's fast path answers the same
+question with the same body — `instant.php?mode=results` — and a parameter it
+could not honour identically would make the two disagree. Rate limited under its
+own bucket, `instant`, which the fast path shares.
+
 ## `GET /status`
 
 Requires `manage_options`. Reports the plugin version, the required and applied
@@ -177,7 +226,8 @@ error.
 
 Off unless a persistent object cache is present, and the dashboard says so rather
 than implying protection that is not there. Limits are per IP address per window,
-configurable, and applied to the three public endpoints.
+configurable, and applied to the four public endpoints. The popup's fast path
+shares the `instant` bucket with its REST twin.
 
 Behind a CDN or reverse proxy, limit there instead. This is a backstop, not a
 perimeter.

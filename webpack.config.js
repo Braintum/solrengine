@@ -17,6 +17,7 @@ module.exports = {
 	entry: {
 		'instant-search': path.resolve( __dirname, 'assets/src/instant-search.js' ),
 		filters: path.resolve( __dirname, 'assets/src/filters.js' ),
+		'search-modal': path.resolve( __dirname, 'assets/src/search-modal.js' ),
 	},
 	output: {
 		...defaults.output,

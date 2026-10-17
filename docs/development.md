@@ -163,6 +163,9 @@ instant.php         Second entry point, reached directly over HTTP. Answers
 constants.php       Version, paths, schema contract version. Included by both
                     entry points and needs no WordPress, so neither has to
                     define them twice.
+templates/          Front-end templates. A theme overrides one by copying it to
+                    yourtheme/solrengine/. Their data-solrengine-* attributes
+                    are public API.
 src/Contracts/      Public API. Interfaces and value objects. No WordPress,
                     no network, no Solr vocabulary.
 src/Support/        Container, configuration, credentials, logging.

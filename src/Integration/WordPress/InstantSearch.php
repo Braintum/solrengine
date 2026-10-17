@@ -59,29 +59,46 @@ final class InstantSearch {
 	/**
 	 * The URL autocomplete calls.
 	 *
-	 * Defaults to the fast path, `instant.php`, which answers on a SHORTINIT
-	 * boot instead of through `rest_api_init`. Measured on a WooCommerce site
-	 * with OPcache warm, the REST route spent 830ms reaching its callback and
-	 * 67ms answering: the fast path removes that 830ms and returns byte-identical
-	 * JSON. See {@see \SolrEngine\Rest\InstantEndpoint}.
-	 *
-	 * The REST route is unchanged and remains the documented, hookable endpoint.
-	 * A site that needs its suggest filters to run during autocomplete turns the
-	 * fast path off and pays the bootstrap.
-	 *
-	 * Falls back to the REST route on its own when `instant.php` is missing, so
-	 * a partial deployment degrades in latency rather than breaking the field.
+	 * The fast path when it is available, the REST route otherwise. See
+	 * {@see self::fast_path_url()}.
 	 *
 	 * @return string
 	 */
 	private function suggest_endpoint(): string {
-		$rest = rest_url( 'solrengine/v1/suggest' );
+		$fast = self::fast_path_url( $this->config );
 
+		return '' !== $fast ? $fast : rest_url( 'solrengine/v1/suggest' );
+	}
+
+	/**
+	 * The fast-path address, or '' when it must not be used.
+	 *
+	 * Shared by autocomplete and the search popup, so one switch governs both.
+	 *
+	 * The fast path is `instant.php`, which answers on a SHORTINIT boot instead
+	 * of through `rest_api_init`. Measured on a WooCommerce site with OPcache
+	 * warm, the REST route spent 830ms reaching its callback and 67ms
+	 * answering: the fast path removes that 830ms and returns byte-identical
+	 * JSON. See {@see \SolrEngine\Rest\InstantEndpoint}.
+	 *
+	 * The REST routes are unchanged and remain the documented, hookable
+	 * endpoints. A site that needs its search filters to run turns the fast
+	 * path off and pays the bootstrap.
+	 *
+	 * '' when `instant.php` is missing, too, so a partial deployment degrades
+	 * in latency rather than breaking the field.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param Config $config Configuration.
+	 * @return string
+	 */
+	public static function fast_path_url( Config $config ): string {
 		/**
-		 * Filters whether autocomplete uses the fast path.
+		 * Filters whether autocomplete and the search popup use the fast path.
 		 *
-		 * Returning false sends autocomplete through the REST route instead,
-		 * where `rest_api_init` has run and every suggest filter fires.
+		 * Returning false sends both through their REST routes instead, where
+		 * `rest_api_init` has run and every search filter fires.
 		 *
 		 * @since 0.10.2
 		 *
@@ -89,18 +106,42 @@ final class InstantSearch {
 		 */
 		$fast = (bool) apply_filters(
 			'solrengine_instant_fast_path',
-			$this->config->get_bool( 'search.instant_fast_path', true )
+			$config->get_bool( 'search.instant_fast_path', true )
 		);
 
-		if ( ! $fast ) {
-			return $rest;
-		}
-
-		if ( ! is_readable( SOLRENGINE_PLUGIN_DIR . 'instant.php' ) ) {
-			return $rest;
+		if ( ! $fast || ! is_readable( SOLRENGINE_PLUGIN_DIR . 'instant.php' ) ) {
+			return '';
 		}
 
 		return SOLRENGINE_PLUGIN_URL . 'instant.php';
+	}
+
+	/**
+	 * The CSS selector for the theme's search fields.
+	 *
+	 * Shared with the search popup, which opens from the same fields.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @return string
+	 */
+	public static function selector(): string {
+		/**
+		 * Filters which inputs get instant search.
+		 *
+		 * Defaults cover the block search input and the classic search
+		 * form. A theme with an unusual markup can point this at its
+		 * own selector rather than being left out. Applies to the
+		 * suggestion list and the search popup alike.
+		 *
+		 * @since 0.5.0
+		 *
+		 * @param string $selector A CSS selector.
+		 */
+		return (string) apply_filters(
+			'solrengine_instant_search_selector',
+			'input[type="search"], input[name="s"], .wp-block-search__input'
+		);
 	}
 
 	/**
@@ -148,21 +189,7 @@ final class InstantSearch {
 				'endpoint' => $this->suggest_endpoint(),
 				'limit'    => $this->config->get_int( 'search.instant_limit', 8 ),
 				'minimum'  => SuggestQuery::MIN_LENGTH,
-				/**
-				 * Filters which inputs get autocomplete.
-				 *
-				 * Defaults cover the block search input and the classic search
-				 * form. A theme with an unusual markup can point this at its
-				 * own selector rather than being left out.
-				 *
-				 * @since 0.5.0
-				 *
-				 * @param string $selector A CSS selector.
-				 */
-				'selector' => (string) apply_filters(
-					'solrengine_instant_search_selector',
-					'input[type="search"], input[name="s"], .wp-block-search__input'
-				),
+				'selector' => self::selector(),
 				'i18n'     => array(
 					'noResults'    => __( 'No suggestions', 'solrengine' ),
 					/* translators: %d: number of suggestions found. */

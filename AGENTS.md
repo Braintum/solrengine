@@ -34,6 +34,9 @@ WordPress plugin that answers search from Apache Solr and falls back to WordPres
 - Measure before building. Profile where the time actually goes and report it before
   writing a faster path; most latency in a WordPress request is not in this plugin. A
   change that buys speed with duplication has to justify the duplication first.
+- Templates in `templates/` are public API: a theme copies them. Changing a
+  `data-solrengine-*` attribute or a slot name breaks every theme override, so
+  treat it like a hook change and document it in `docs/search-modal.md`.
 
 ## Do not edit by hand
 
@@ -60,6 +63,7 @@ Start here, then follow the link for the area you are changing. The full index i
 | [docs/schema.md](docs/schema.md) | Field contract and dynamic `se_*` fields |
 | [docs/indexing.md](docs/indexing.md) | Sync, rebuilds, staleness |
 | [docs/search.md](docs/search.md) | Relevance and fallback |
+| [docs/search-modal.md](docs/search-modal.md) | Search popup, theme templates |
 | [docs/security.md](docs/security.md) | Threat model |
 
 Plans and ADRs live in `.claude/plans/` and are not shipped. Where the repo and a plan disagree, the plan's phase status is the record of which is right.

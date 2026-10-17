@@ -13,7 +13,7 @@ it arrived in. Each one is public API from 1.0.
       php bin/generate-hooks.php
 -->
 
-23 hooks: 8 actions and 15 filters.
+27 hooks: 8 actions and 19 filters.
 
 - [Startup](#startup)
 - [What gets indexed](#what-gets-indexed)
@@ -27,7 +27,7 @@ it arrived in. Each one is public API from 1.0.
 
 ### `solrengine_allowed_ports`
 
-Filter · since 0.1.0 · `src/Bootstrap.php:387`
+Filter · since 0.1.0 · `src/Bootstrap.php:390`
 
 Ports SolrEngine will connect to.
 
@@ -41,7 +41,7 @@ than a setting: a deliberate act by a site owner, in code.
 
 ### `solrengine_booted`
 
-Action · since 0.1.0 · `src/Bootstrap.php:189`
+Action · since 0.1.0 · `src/Bootstrap.php:192`
 
 Fires once SolrEngine has registered its services.
 
@@ -239,12 +239,12 @@ Filters suggestions before they are returned.
 
 ### `solrengine_instant_fast_path`
 
-Filter · since 0.10.2 · `src/Integration/WordPress/InstantSearch.php:90`
+Filter · since 0.10.2 · `src/Integration/WordPress/InstantSearch.php:107`
 
-Filters whether autocomplete uses the fast path.
+Filters whether autocomplete and the search popup use the fast path.
 
-Returning false sends autocomplete through the REST route instead,
-where `rest_api_init` has run and every suggest filter fires.
+Returning false sends both through their REST routes instead, where
+`rest_api_init` has run and every search filter fires.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -252,17 +252,69 @@ where `rest_api_init` has run and every suggest filter fires.
 
 ### `solrengine_instant_search_selector`
 
-Filter · since 0.5.0 · `src/Integration/WordPress/InstantSearch.php:162`
+Filter · since 0.5.0 · `src/Integration/WordPress/InstantSearch.php:141`
 
-Filters which inputs get autocomplete.
+Filters which inputs get instant search.
 
 Defaults cover the block search input and the classic search
 form. A theme with an unusual markup can point this at its
-own selector rather than being left out.
+own selector rather than being left out. Applies to the
+suggestion list and the search popup alike.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `$selector` | `string` | A CSS selector. |
+
+### `solrengine_search_modal_args`
+
+Filter · since 0.11.0 · `src/Integration/WordPress/SearchModal.php:233`
+
+Filters what the search popup's template receives.
+
+Change the heading, tagline or placeholder, or opt in to the
+"Powered by SolrEngine" line, without overriding the template.
+
+
+}
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `$args` | `array` | { |
+
+### `solrengine_search_modal_triggers`
+
+Filter · since 0.11.0 · `src/Integration/WordPress/SearchModal.php:366`
+
+Filters which elements open the search popup when clicked.
+
+For search icons, menu items and buttons that are not part of a
+search form. The theme's search fields and the buttons that
+submit them are matched separately, through
+`solrengine_instant_search_selector`.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `$selector` | `string` | A CSS selector. |
+
+### `solrengine_search_modal_width`
+
+Filter · since 0.11.0 · `src/Integration/WordPress/SearchModal.php:314`
+
+Filters the width the search popup grows to.
+
+For a theme that declares no width, or declares a narrower one than
+its layout: return the site container's width, such as `'1200px'`.
+A plain length, a percentage, or calc(), min(), max(), clamp() or
+var() over them; anything else is ignored. Return '' for the
+stylesheet's default. A theme can also set
+`--solrengine-modal-width` in CSS, which wins over this.
+
+
+                     `$content_width`, as a CSS length, or ''.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `$width` | `string` | The theme's wide size, content size or |
 
 ### `solrengine_should_handle_query`
 
@@ -277,6 +329,23 @@ posts_pre_query, or where one search form should stay on WordPress.
 | --- | --- | --- |
 | `$eligible` | `bool` | Whether to handle it. |
 | `$query` | `WP_Query` | The query. |
+
+### `solrengine_template`
+
+Filter · since 0.11.0 · `src/Integration/WordPress/Templates.php:75`
+
+Filters the file a SolrEngine template resolves to.
+
+For a plugin, rather than a theme, that wants to supply a template:
+a theme needs no hook, because a file at
+`{theme}/solrengine/{name}` is found on its own. Return '' to
+suppress a template altogether — a per-post-type card, for instance,
+so that type falls back to the default card.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `$path` | `string` | Absolute path found, or '' when none was. |
+| `$name` | `string` | Relative template name. |
 
 ### `solrengine_wc_price_bands`
 
@@ -312,7 +381,7 @@ about. Return an object implementing the LanguageProvider contract.
 
 ### `solrengine_rate_limit_request`
 
-Filter · since 0.4.0 · `src/Rest/RateLimiter.php:95`
+Filter · since 0.4.0 · `src/Rest/RateLimiter.php:111`
 
 Filters whether a request is subject to rate limiting.
 

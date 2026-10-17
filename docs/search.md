@@ -196,6 +196,13 @@ at the CDN or web server.
 
 # Instant search
 
+Instant search comes in two forms, chosen on the settings screen: a **search
+popup** with result cards and content-type tabs, which is the default and is
+documented in [search-modal.md](search-modal.md), and the **suggestion list**
+described here — a dropdown of matching titles under the field. Both attach to
+the theme's own search field, share the fast path below, and are switched by
+`search.instant_mode`.
+
 Suggestions appear as a visitor types, attached to the search field the theme
 already renders. SolrEngine does not provide its own search box: matching a
 theme's styling on every theme ever written is not a thing a plugin can do, and
@@ -348,7 +355,7 @@ add_filter( 'solrengine_instant_fast_path', '__return_false' );
 ## Customising
 
 ```php
-// Point at a theme's own search markup.
+// Point at a theme's own search markup. Applies to the popup too.
 add_filter( 'solrengine_instant_search_selector', function () {
 	return '.my-theme-search input';
 } );
@@ -365,6 +372,7 @@ add_filter( 'solrengine_suggestions', function ( $suggestions, $query ) {
 | Key | Default | Effect |
 | --- | --- | --- |
 | `search.instant_enabled` | `false` | Whether autocomplete is attached at all |
-| `search.instant_limit` | `8` | Suggestions requested |
+| `search.instant_mode` | `modal` | `modal` for the [search popup](search-modal.md), `suggest` for the suggestion list |
+| `search.instant_limit` | `8` | Suggestions requested. The search popup pages its own results |
 | `search.instant_fast_path` | `true` | Answer from `instant.php` rather than the REST route |
 | `search.instant_timeout_ms` | `1500` | How long to wait for Solr. Deliberately far below the 10s a search allows: a suggestion arriving after two more keystrokes is not a suggestion |

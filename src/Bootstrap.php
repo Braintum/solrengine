@@ -40,6 +40,7 @@ use SolrEngine\Indexing\RunHistory;
 use SolrEngine\Integration\WordPress\InstantSearch;
 use SolrEngine\Integration\WordPress\QueryIntegration;
 use SolrEngine\Integration\WordPress\SearchFilters;
+use SolrEngine\Integration\WordPress\SearchModal;
 use SolrEngine\Integration\Multilingual\CoreProvider;
 use SolrEngine\Integration\Multilingual\PolylangProvider;
 use SolrEngine\Integration\Multilingual\WpmlProvider;
@@ -47,12 +48,14 @@ use SolrEngine\Integration\WooCommerce\WooCommerce;
 use SolrEngine\Language\Languages;
 use SolrEngine\Multisite\NetworkConfig;
 use SolrEngine\Multisite\SiteScope;
+use SolrEngine\Rest\InstantResultsController;
 use SolrEngine\Rest\RateLimiter;
 use SolrEngine\Rest\SearchController;
 use SolrEngine\Rest\StatusController;
 use SolrEngine\Integration\WooCommerce\ProductFields;
 use SolrEngine\Search\FacetRegistry;
 use SolrEngine\Search\FilterRegistry;
+use SolrEngine\Search\InstantResults;
 use SolrEngine\Search\QueryTranslator;
 use SolrEngine\Search\RelevanceProfile;
 use SolrEngine\Search\ResponseParser;
@@ -670,13 +673,38 @@ final class Bootstrap {
 		);
 
 		$container->share(
+			'search.instant_results',
+			static function ( Container $c ): InstantResults {
+				// Not search.instant_limit: that is how many suggestions the
+				// suggestion list shows, and the popup's pages and sections are
+				// sized for its card grid instead.
+				return new InstantResults(
+					$c->get( 'search.service' ),
+					IndexedTypes::all( $c->get( 'config' ) )
+				);
+			}
+		);
+
+		// Who the rate limiter exempts. Its own service rather than 'viewer',
+		// because the two questions part company where a login cannot be
+		// verified: a cache may trust an unvalidated cookie, an exemption may
+		// not. See AnonymousViewer, which instant.php puts here.
+		$container->share(
+			'rest.rate_limiter.viewer',
+			static function ( Container $c ): Viewer {
+				return $c->get( 'viewer' );
+			}
+		);
+
+		$container->share(
 			'rest.rate_limiter',
 			static function ( Container $c ): RateLimiter {
 				$config = $c->get( 'config' );
 
 				return new RateLimiter(
 					$config->get_int( 'search.rate_limit', 60 ),
-					$config->get_int( 'search.rate_window', 60 )
+					$config->get_int( 'search.rate_window', 60 ),
+					$c->get( 'rest.rate_limiter.viewer' )
 				);
 			}
 		);
@@ -1303,7 +1331,11 @@ final class Bootstrap {
 		// only enqueues an asset; nothing is constructed unless a visitor
 		// actually types.
 		if ( $config->get_bool( 'search.instant_enabled', false ) ) {
-			( new InstantSearch( $config ) )->register();
+			if ( 'suggest' === $config->get_string( 'search.instant_mode', 'modal' ) ) {
+				( new InstantSearch( $config ) )->register();
+			} else {
+				( new SearchModal( $config ) )->register();
+			}
 		}
 
 		// Checked before anything else is constructed. A site that has not
@@ -1487,6 +1519,14 @@ final class Bootstrap {
 					$container->get( 'search.filters' ),
 					$container->get( 'search.facets' ),
 					$config,
+					$container->get( 'rest.rate_limiter' ),
+					(int) $container->get( 'site_id' )
+				) )->register();
+
+				( new InstantResultsController(
+					static function () use ( $container ) {
+						return $container->get( 'search.instant_results' );
+					},
 					$container->get( 'rest.rate_limiter' ),
 					(int) $container->get( 'site_id' )
 				) )->register();

@@ -201,13 +201,18 @@ Two leakage paths that return no documents and are easy to miss:
 `SHORTINIT` boot. Being a second door into the plugin, it is worth stating what it
 does and does not rely on.
 
-**It reads, and only reads.** One prefix query for at most twenty short rows. No
-parameter reaches Solr as syntax, no state is written, and there is nothing to
-forge — which is why it carries no nonce.
+**It reads, and only reads.** One prefix query for at most twenty short rows,
+or — with `mode=results`, for the search popup — one search for at most twenty
+results and a post-type count. No parameter reaches Solr as syntax, no state is
+written, and there is nothing to forge — which is why it carries no nonce. The
+popup's tab is a post type checked against the indexed list from configuration,
+and its text is capped at 200 characters, exactly as the REST route's argument
+schema caps it.
 
 **The query's guarantees are the query's, not the bootstrap's.** The site scope
-and the public-visibility filter are built by `SuggestTranslator` on the server
-and are unreachable from the query string. Typed text is bound as a Solr
+and the public-visibility filter are built by `SuggestTranslator` — and for the
+popup by `QueryTranslator`, the same translator a results page uses — on the
+server, and are unreachable from the query string. Typed text is bound as a Solr
 parameter. The endpoint is the validated one from configuration, and credentials
 are decrypted through the same `Encryption` from the same salts.
 
@@ -241,11 +246,26 @@ with the narrow rule — every other shipped PHP file must guard or must contain
 nothing that runs when loaded, and this file is named as the single exception. A
 second unguarded file cannot appear without failing CI.
 
-One thing this endpoint does not currently do that the REST route does: **it is
-not rate limited.** `RateLimiter` runs on the REST routes only. Note also that
-rate limiting depends on `wp_cache_*` outliving the request, so it is only
-effective on a site with a persistent object cache — without one, the counter is
-per-request memory on either route.
+**Results mode is rate limited; suggest mode is not yet.** The popup's results
+mode calls the same `RateLimiter`, under the same `instant` bucket, as
+`GET /solrengine/v1/instant`. Here the limiter is handed `AnonymousViewer` rather
+than `CookieViewer`: signed-in users are exempt from the limit, and an unvalidated
+cookie must not buy that exemption, so in this process nobody is exempt.
+Autocomplete's suggest mode still runs without the limiter — that is open with
+the fast-path launch decision. Rate limiting also depends on `wp_cache_*`
+outliving the request, so it is only effective on a site with a persistent object
+cache — without one, the counter is per-request memory on either route.
+
+## Front-end templates
+
+The search popup renders theme-overridable templates (see
+[search-modal.md](search-modal.md)). `Integration\WordPress\Templates` checks
+every name against `^[a-z0-9_-]+(/[a-z0-9_-]+)*\.php$` before looking anything up,
+because one name is built from a post type, and a path assembled from data should
+be proven harmless rather than assumed so. Each bundled template refuses direct
+access and escapes its own output. Result cards are filled in the browser with
+`textContent` only, and a URL becomes an `href` or `src` only when it is `http` or
+`https`.
 
 ## Reporting a vulnerability
 

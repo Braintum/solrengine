@@ -141,6 +141,10 @@ final class Config {
 				'search.enabled'                => false,
 				'search.shop_enabled'           => false,
 				'search.instant_enabled'        => false,
+				// How instant search presents itself: "modal", a popup with
+				// results and type tabs, or "suggest", a list of titles under
+				// the theme's own field.
+				'search.instant_mode'           => 'modal',
 				'search.instant_limit'          => 8,
 				// Autocomplete answers through instant.php rather than the REST
 				// route. Same JSON, without rest_api_init's bootstrap.

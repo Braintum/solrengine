@@ -62,6 +62,7 @@ Everything else — the integration suite, a real Solr in Docker, the test fixtu
 | | |
 | --- | --- |
 | [rest-api.md](docs/rest-api.md) | Endpoints, parameters, response shapes, versioning |
+| [search-modal.md](docs/search-modal.md) | The search popup: theme template overrides, slots, events, styling |
 | [cli.md](docs/cli.md) | Every command |
 | [schema.md](docs/schema.md) | The field contract, dynamic field conventions, migration |
 
@@ -72,6 +73,7 @@ Everything else — the integration suite, a real Solr in Docker, the test fixtu
 | [solr.md](docs/solr.md) | Provisioning Solr, the shipped configset, TLS, authentication |
 | [indexing.md](docs/indexing.md) | Full and incremental sync, rebuilds, troubleshooting staleness |
 | [search.md](docs/search.md) | Relevance, fallback behaviour, instant search |
+| [search-modal.md](docs/search-modal.md) | The search popup, and how a theme changes it |
 | [facets.md](docs/facets.md) | Faceted search and the filter blocks |
 | [woocommerce.md](docs/woocommerce.md) | Indexed product fields, the price limitation, visibility |
 | [multisite.md](docs/multisite.md) | Networks, topologies, per-site opt-in |

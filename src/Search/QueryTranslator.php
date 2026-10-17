@@ -482,6 +482,11 @@ final class QueryTranslator {
 	 * readable, and returning everything would expose indexed meta that an
 	 * administrator never meant to publish.
 	 *
+	 * The product prices are on it because the search popup shows them and the
+	 * popup's fast path has no WooCommerce to ask. They are what the product
+	 * page already publishes, and a document that is not a product simply has
+	 * none of them, so asking costs nothing on a site that sells nothing.
+	 *
 	 * @return string[]
 	 */
 	private static function default_return_fields(): array {
@@ -496,6 +501,11 @@ final class QueryTranslator {
 			DocumentFields::DATE,
 			DocumentFields::AUTHOR_NAME,
 			DocumentFields::THUMBNAIL,
+			ProductFields::PRICE,
+			ProductFields::PRICE_MIN,
+			ProductFields::PRICE_MAX,
+			ProductFields::REGULAR_PRICE,
+			ProductFields::PRICE_TAXED,
 		);
 	}
 }

@@ -8,6 +8,8 @@
 namespace SolrEngine\Rest;
 
 use SolrEngine\Contracts\Result;
+use SolrEngine\Contracts\Viewer;
+use SolrEngine\Support\WpViewer;
 
 /**
  * Limits how often one client may call a public endpoint.
@@ -51,14 +53,28 @@ final class RateLimiter {
 	private $window;
 
 	/**
+	 * Whether the request belongs to a signed-in user.
+	 *
+	 * Asked through the contract rather than `is_user_logged_in()`, because the
+	 * search popup's fast path is limited too and runs in a SHORTINIT process
+	 * with no user stack to ask. The same seam {@see \SolrEngine\Search\SearchService}
+	 * uses, for the same reason.
+	 *
+	 * @var Viewer
+	 */
+	private $viewer;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param int $limit  Requests allowed per window.
-	 * @param int $window Window length in seconds.
+	 * @param int         $limit  Requests allowed per window.
+	 * @param int         $window Window length in seconds.
+	 * @param Viewer|null $viewer Who is asking. Defaults to WordPress's answer.
 	 */
-	public function __construct( int $limit = 60, int $window = 60 ) {
+	public function __construct( int $limit = 60, int $window = 60, ?Viewer $viewer = null ) {
 		$this->limit  = max( 1, $limit );
 		$this->window = max( 1, $window );
+		$this->viewer = $viewer ?? new WpViewer();
 	}
 
 	/**
@@ -98,7 +114,7 @@ final class RateLimiter {
 
 		// Logged-in users are not throttled. They are authenticated, and an
 		// editor testing search should not be locked out of their own site.
-		if ( is_user_logged_in() ) {
+		if ( $this->viewer->is_authenticated() ) {
 			return Result::success();
 		}
 
