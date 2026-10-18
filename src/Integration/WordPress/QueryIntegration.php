@@ -249,7 +249,10 @@ final class QueryIntegration {
 			$page = max( 1, (int) floor( $ceiling / $per_page ) );
 		}
 
-		$search = new SearchQuery( (string) $query->get( 's' ), $this->site_id );
+		// Completed, so the results page finds what the search popup found
+		// for the same text: "hoo" is the start of "hoodie". SearchFilters
+		// builds its counts the same way, and must keep doing so.
+		$search = ( new SearchQuery( (string) $query->get( 's' ), $this->site_id ) )->with_completion();
 
 		$language = $this->scoped_language();
 

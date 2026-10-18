@@ -524,7 +524,9 @@ final class SearchFilters {
 	 * @return SearchQuery
 	 */
 	private function query(): SearchQuery {
-		$query = new SearchQuery( $this->terms(), $this->site_id );
+		// Completed, as QueryIntegration completes the results these counts
+		// sit beside; otherwise "hoo" would list hoodies with no counts.
+		$query = ( new SearchQuery( $this->terms(), $this->site_id ) )->with_completion();
 
 		$post_types = IndexedTypes::all( $this->config );
 

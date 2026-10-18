@@ -293,7 +293,8 @@ the same list.
   properties.
 * New REST route `/solrengine/v1/instant`, also answered by the fast path, which
   now falls back to REST on its own when a host blocks it.
-* The popup matches the word being typed as a prefix: "hoo" finds "Hoodie".
+* Search matches the word being typed as a prefix: "hoo" finds "Hoodie", in the
+  popup, on the results page, in the filter counts and in product search alike.
 * Fix: the instant-search fast path now searches product SKUs and attribute
   values on a WooCommerce site, as the REST route always did.
 * New hooks: `solrengine_template`, `solrengine_search_modal_args`,

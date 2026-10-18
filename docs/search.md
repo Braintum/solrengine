@@ -238,9 +238,14 @@ prefix expands to most of the term dictionary. The rule lives in
 ## Completing a search query
 
 A `SearchQuery` can ask for the same treatment with `with_completion()` (since
-0.11.0); the search popup does, because it searches as the visitor types. The
+0.11.0). Every search a visitor types asks for it: the search popup, the results
+page, the filter panel's counts beside it, and WooCommerce's product search. The
 last word is then matched as a prefix, so "hoo" finds "Hoodie", and every other
-word still has to match as written.
+word still has to match as written. The popup and the page therefore agree: what
+"hoo" showed in the popup is what pressing Enter shows on the page.
+
+The REST `/search` route does not complete. It is an API for code, which sends
+finished words; a caller that wants completion appends the `*` itself.
 
 A wildcard match scores every document alike, which on its own would rank
 "Hoodie" level with "Hoodie with Logo" even when the visitor typed the whole
@@ -253,8 +258,17 @@ match a language's stemmed fields â€” `hoodie*` cannot match the stem `hoodi` â€
 but the neutral fields are always searched, so nothing is lost. The fuzzy retry
 is not completed: a word already carrying `~1` is not a plain word.
 
-The results page does not complete. A visitor who presses Enter on "hoo" gets the
-theme's results page for "hoo", which matches whole words.
+To match whole words only, everywhere, turn it off on the way in:
+
+```php
+add_filter( 'solrengine_search_query', function ( $query ) {
+	return $query->with_completion( false );
+} );
+```
+
+With search replacement off, the results page is WordPress's own search, which
+matches any part of a word already; completion only matters where SolrEngine
+answers.
 
 ## Privacy
 

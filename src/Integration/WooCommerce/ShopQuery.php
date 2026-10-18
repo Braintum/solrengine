@@ -141,7 +141,8 @@ final class ShopQuery {
 			return null;
 		}
 
-		$query = new SearchQuery( (string) ( $vars['s'] ?? '' ), $this->site_id );
+		// Completed, like every search a visitor types: see QueryIntegration.
+		$query = ( new SearchQuery( (string) ( $vars['s'] ?? '' ), $this->site_id ) )->with_completion();
 		$query = $query->with_post_types( array( ProductDocument::POST_TYPE ) );
 
 		foreach ( $filters as $key => $filter ) {

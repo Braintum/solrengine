@@ -30,7 +30,7 @@ ignored.
 
 | Parameter | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `q` | string | `''` | The search text. Maximum 512 characters. Empty means browse |
+| `q` | string | `''` | The search text. Maximum 512 characters. Empty means browse. Words match whole; unlike the popup and the results page, the last word is not completed |
 | `page` | integer | `1` | |
 | `per_page` | integer | `10` | Maximum 50 |
 | `sort` | string | `relevance` | One of the enum below |

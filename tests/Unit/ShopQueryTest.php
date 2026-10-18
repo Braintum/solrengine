@@ -293,6 +293,8 @@ final class ShopQueryTest extends TestCase {
 
 		$this->assertSame( 'relevance', $query->sort() );
 		$this->assertSame( 'boots', $query->terms() );
+		// Typed by a visitor, so "boo" finds boots here as in the popup.
+		$this->assertTrue( $query->completes_last_word() );
 	}
 
 	public function test_woocommerces_own_visibility_terms_are_recognised_not_refused(): void {

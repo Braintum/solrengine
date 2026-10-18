@@ -97,7 +97,8 @@ from its counts, narrowing to one tab leaves the others' numbers intact.
 "Hoodie", "beanie lo" finds "Beanie with Logo" — while every earlier word must
 match as written. Whole words still rank as they would on the results page. See
 [search.md](search.md#completing-a-search-query) for how, and for what does not
-complete: one-letter words, words with punctuation, and the results page itself.
+complete: one-letter words and words with punctuation. The results page completes
+the same way, so pressing Enter shows what the popup showed.
 
 **WooCommerce fields on both surfaces.** On a shop, SKUs and attribute values
 are searched as well as titles and content. The fast path loads no plugins, so it
