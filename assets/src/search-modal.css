@@ -22,8 +22,10 @@
 .solrengine-modal {
 	--solrengine-modal-bg: #fff;
 	--solrengine-modal-text: #1d2127;
-	--solrengine-modal-muted: #6b7280;
-	--solrengine-modal-faint: #8a919c;
+
+	/* Both pass 4.5:1 on every surface they sit on, the pills included. */
+	--solrengine-modal-muted: #5f6673;
+	--solrengine-modal-faint: #656c79;
 	--solrengine-modal-border: #e7e9ed;
 	--solrengine-modal-field: #f5f6f8;
 	--solrengine-modal-field-border: #e3e6ea;
@@ -545,8 +547,7 @@ html.solrengine-modal-is-open {
 }
 
 .solrengine-modal .solrengine-result__link:hover,
-.solrengine-modal .solrengine-result__link:focus-visible,
-.solrengine-modal .solrengine-result.is-active .solrengine-result__link {
+.solrengine-modal .solrengine-result__link:focus-visible {
 	border-color: color-mix(in srgb, var(--solrengine-modal-accent) 45%, var(--solrengine-modal-border));
 	box-shadow: 0 8px 20px -10px rgba(16, 24, 40, 0.28);
 	transform: translateY(-1px);
@@ -674,7 +675,7 @@ html.solrengine-modal-is-open {
 }
 
 .solrengine-modal .solrengine-result__link:hover .solrengine-result__go,
-.solrengine-modal .solrengine-result.is-active .solrengine-result__go {
+.solrengine-modal .solrengine-result__link:focus-visible .solrengine-result__go {
 	color: var(--solrengine-modal-accent);
 	transform: translate(1px, -1px);
 }
@@ -725,6 +726,13 @@ html.solrengine-modal-is-open {
 	outline-offset: 2px;
 }
 
+/* A card's lift and border alone are too faint to find focus by, and vanish
+   in forced colours: an outline is drawn around the whole card as well. */
+.solrengine-modal .solrengine-result__link:focus-visible {
+	outline: 3px solid var(--solrengine-modal-accent);
+	outline-offset: 2px;
+}
+
 .solrengine-modal .screen-reader-text {
 	position: absolute;
 	width: 1px;
@@ -733,15 +741,16 @@ html.solrengine-modal-is-open {
 	padding: 0;
 	overflow: hidden;
 	clip: rect(0, 0, 0, 0);
+	clip-path: inset(50%);
 	border: 0;
 	white-space: nowrap;
 }
 
 @media (forced-colors: active) {
 
-	.solrengine-modal .solrengine-result.is-active .solrengine-result__link {
+	.solrengine-modal .solrengine-result__link:focus-visible {
 		outline: 3px solid Highlight;
-		outline-offset: 1px;
+		outline-offset: 2px;
 	}
 
 	.solrengine-modal .solrengine-tab.is-selected::after {
@@ -758,7 +767,7 @@ html.solrengine-modal-is-open {
 	}
 
 	.solrengine-modal .solrengine-result__link:hover,
-	.solrengine-modal .solrengine-result.is-active .solrengine-result__link {
+	.solrengine-modal .solrengine-result__link:focus-visible {
 		transform: none;
 	}
 

@@ -138,6 +138,24 @@ final class SearchModalTest extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'data-solrengine-more', $html );
 	}
 
+	public function test_the_bundled_markup_uses_links_not_a_listbox(): void {
+		wp_register_script( SearchModal::HANDLE, 'https://example.com/x.js', array(), '1', true );
+		wp_enqueue_script( SearchModal::HANDLE );
+
+		$html = $this->markup();
+
+		// A card is a link to a page. A listbox option may not contain one,
+		// so the results are lists of ordinary links that Tab reaches.
+		$this->assertStringNotContainsString( 'role="listbox"', $html );
+		$this->assertStringNotContainsString( 'role="option"', $html );
+		$this->assertStringNotContainsString( 'tabindex="-1" data-solrengine-href', $html );
+		$this->assertStringContainsString( 'role="list" data-solrengine-section-results', $html );
+
+		// The field says how to reach the results without a mouse.
+		$this->assertStringContainsString( 'aria-describedby="solrengine-modal-hint"', $html );
+		$this->assertStringContainsString( 'id="solrengine-modal-hint" data-solrengine-hint', $html );
+	}
+
 	public function test_credit_is_off_unless_a_site_opts_in(): void {
 		wp_register_script( SearchModal::HANDLE, 'https://example.com/x.js', array(), '1', true );
 		wp_enqueue_script( SearchModal::HANDLE );

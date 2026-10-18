@@ -40,8 +40,13 @@ the theme's form submits as it always did.
 
 | Key | Does |
 | --- | --- |
-| ↓ / ↑ | Move through the results. Focus stays in the field. On a type tab, ↓ on the last card loads the next page |
-| Enter | Opens the highlighted result, or with none highlighted, the full results page |
+| Tab / Shift+Tab | Move through everything in the popup, every result card included, in reading order |
+| ↓ in the field | Moves focus to the first result |
+| ↓ / → and ↑ / ← on a result | Next and previous result. ↑ on the first goes back to the field. On a type tab, ↓ on the last loads the next page and moves to its first result |
+| Home / End on a result | First and last result |
+| Typing on a result | Goes on typing in the field |
+| Enter in the field | The full results page for the text |
+| Enter on a result | Opens it, like any link; Ctrl/⌘+Enter opens it in a new tab |
 | Escape | Closes, and returns focus to where it was |
 | ← / → / Home / End on the tabs | Move between tabs and select |
 
@@ -250,7 +255,7 @@ the dialog and change it freely, keeping these:
 | `data-solrengine-field="count"` | The type's count, formatted for the site's language |
 | `data-solrengine-see-all` | The button that selects the type's tab. Hidden when every match is already shown |
 | `data-solrengine-field="see_all"` | The button's text, "See all N" |
-| `data-solrengine-section-results` | The list cards are added to. Keep `role="listbox"` on it |
+| `data-solrengine-section-results` | The list cards are added to. The script gives it `role="list"`, which Safari needs to announce a list styled without bullets |
 
 Each section carries `data-solrengine-section="<post type>"` and
 `data-solrengine-total`, for styling one type differently. Without the template
@@ -266,7 +271,18 @@ and further pages are reached only with ↓ past the last card.
 
 ### Result cards
 
-The outermost element is the listbox option and must be the template's only root.
+The outermost element is a list item and must be the template's only root. The
+element with `data-solrengine-href` is the card's link and its only focusable
+element: the script names it with the result's title (`aria-label`) and
+describes it with whichever of type, price, date and author the card shows
+(`aria-describedby`), so a screen reader says "Hoodie, link, Product, 42,00 € –
+45,00 €" rather than every word in the card run together. Arrow keys move
+between cards by their links.
+
+Before 0.11.0 was released, cards were listbox options with `role="option"` on
+the item and `tabindex="-1"` on the link. The script removes both from an older
+copy, so it keeps working; take them out of your copy anyway.
+
 Slots are attributes:
 
 | Attribute | Fills |
@@ -394,17 +410,32 @@ removes the price element from its copy of `result-product.php`.
 
 - A native modal `<dialog>`: the page behind is inert, focus is contained, and
   focus returns to where it was on close.
-- The field is a combobox controlling one listbox per section, each labelled by
-  its heading; the active result is conveyed with `aria-activedescendant`, so
-  typing is never interrupted. Arrow keys move through visible cards only.
+- The field is a plain search field, described by a hidden hint saying how to
+  reach the results. Results are lists of ordinary links, each list labelled by
+  its section's heading, so Tab reaches every visible result, a screen reader's
+  links list finds them, and a result opens in a new tab like any link.
+- Not a combobox. A combobox's listbox is for choosing a value and its options
+  may not contain links; a result is a link to a page. Arrow keys still move
+  through the results, moving real focus, and ↑ from the first returns to the
+  field.
+- Each result's link is named by its title and described by its type and price.
+  "See all" buttons name their type: "See all 20: Posts".
 - More results load from a real button, so no one depends on scrolling to reach
-  them, and each page is announced.
-- The tabs follow the ARIA tabs pattern.
+  them. Pressing it, or ↓ past the last result, moves focus to the first new
+  result, and each page is announced. The button is never `disabled` while it
+  loads — disabling the focused element sends focus to the top of the page.
+- The tabs follow the ARIA tabs pattern, with the results as their tab panel.
 - A polite live region announces each result count, and the "no results" and
   "unavailable" messages.
 - Opening is never triggered by focus alone.
-- Forced-colours mode keeps the active result and selected tab visible, and
+- A focused result has a 3px outline as well as its hover lift, visible in
+  forced-colours mode too; the selected tab stays marked there, and
   reduced-motion preferences turn the animation off.
+- Text meets 4.5:1 contrast on every surface it sits on, the count pills
+  included.
+- Checked with axe-core (WCAG 2.2 AA and best practices) and a keyboard-only
+  run: `SOLRENGINE_A11Y_URL=http://example.test/ npm run test:a11y`. See
+  `tests/a11y/search-modal.js`.
 
 ## Settings
 

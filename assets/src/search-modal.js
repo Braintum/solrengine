@@ -20,9 +20,16 @@
  * Text is only ever inserted as text.
  *
  * Accessibility, in short: a native modal <dialog> (focus is contained and
- * Escape closes), the search field as a combobox controlling one listbox per
- * section, with the active card conveyed by aria-activedescendant, tabs that follow the
- * tabs pattern with arrow keys, and a live region announcing each result count.
+ * Escape closes); a plain search field; results as lists of ordinary links,
+ * reached with Tab like any other link and also with the arrow keys, which move
+ * real focus rather than a virtual one; each link named by its result's title
+ * and described by its type and price; tabs that follow the tabs pattern with
+ * the results as their panel; and a live region announcing each result count.
+ *
+ * Not a combobox. A combobox's listbox is for choosing a value, and its options
+ * cannot contain links — a card is a link to a page, so that pattern would
+ * either nest interactive elements (which screen readers announce badly) or
+ * give up the link and with it opening a result in a new tab.
  * The popup opens on click, typing or Enter — never on focus alone, so tabbing
  * through a page header does not throw a dialog at a keyboard user (WCAG
  * 3.2.1).
@@ -170,7 +177,6 @@ function attach( dialog ) {
 	let text = '';
 	let tab = '';
 	let items = [];
-	let active = -1;
 	let timer = null;
 	let controller = null;
 	let opener = null;
@@ -187,9 +193,7 @@ function attach( dialog ) {
 
 	results.id = baseId;
 
-	input.setAttribute( 'role', 'combobox' );
-	input.setAttribute( 'aria-autocomplete', 'list' );
-	input.setAttribute( 'aria-expanded', 'false' );
+	input.setAttribute( 'aria-controls', baseId );
 
 	/**
 	 * Fill a template's slots.
@@ -444,8 +448,14 @@ function attach( dialog ) {
 
 		element.id = `${ baseId }-${ index }`;
 		element.dataset.solrengineIndex = String( index );
-		element.setAttribute( 'role', 'option' );
-		element.setAttribute( 'aria-selected', 'false' );
+
+		// A copy of the template from before 0.11.0 shipped: the card is a
+		// list item now, and its link is reached like any other.
+		if ( 'option' === element.getAttribute( 'role' ) ) {
+			element.removeAttribute( 'role' );
+		}
+
+		element.removeAttribute( 'aria-selected' );
 
 		fill(
 			element,
@@ -472,6 +482,8 @@ function attach( dialog ) {
 			},
 		);
 
+		nameLink( element, result );
+
 		element.addEventListener( 'click', ( event ) => {
 			// A click on the link itself navigates natively, so a middle
 			// click or a modified click still opens a new tab. Only the
@@ -481,19 +493,56 @@ function attach( dialog ) {
 			}
 		} );
 
-		element.addEventListener( 'mousemove', () => {
-			const position = options().indexOf( element );
-
-			if ( active !== position ) {
-				setActive( position, false );
-			}
-		} );
-
 		return element;
 	}
 
 	/**
-	 * Build one section: a heading row and a listbox for its cards.
+	 * Name a card's link by its title, and describe it by its type and price.
+	 *
+	 * Without this a link's name is all of its text run together — "Product
+	 * Hoodie 42,00 € Original price was…" — which is the first thing a screen
+	 * reader says and the last thing anyone wants to hear first.
+	 *
+	 * @param {Element} element Card.
+	 * @param {Object}  result  Result.
+	 */
+	function nameLink( element, result ) {
+		const link = element.matches( '[data-solrengine-href]' )
+			? element
+			: element.querySelector( '[data-solrengine-href]' );
+
+		if ( ! link ) {
+			return;
+		}
+
+		if ( '-1' === link.getAttribute( 'tabindex' ) ) {
+			link.removeAttribute( 'tabindex' );
+		}
+
+		const title = String( result.title || '' ).trim();
+
+		if ( title ) {
+			link.setAttribute( 'aria-label', title );
+		}
+
+		const described = [ 'type', 'price', 'date', 'author' ]
+			.map( ( field ) =>
+				element.querySelector( `[data-solrengine-field="${ field }"]` ),
+			)
+			.filter( ( slot ) => slot && '' !== slot.textContent.trim() )
+			.map( ( slot ) => {
+				slot.id ||= `${ element.id }-${ slot.dataset.solrengineField }`;
+
+				return slot.id;
+			} );
+
+		if ( described.length ) {
+			link.setAttribute( 'aria-describedby', described.join( ' ' ) );
+		}
+	}
+
+	/**
+	 * Build one section: a heading row and a list of its cards.
 	 *
 	 * @param {string}  type   Post type.
 	 * @param {number}  total  Matches of that type.
@@ -517,7 +566,10 @@ function attach( dialog ) {
 		const head = element.querySelector( '[data-solrengine-section-header]' );
 
 		list.id = `${ id }-list`;
-		list.setAttribute( 'role', 'listbox' );
+		list.dataset.solrengineSectionResults = '';
+		// Lists styled without bullets lose their list semantics in Safari;
+		// the role puts them back, so "list, 4 items" is still announced.
+		list.setAttribute( 'role', 'list' );
 		element.dataset.solrengineSection = type;
 		element.dataset.solrengineTotal = String( total );
 
@@ -547,6 +599,19 @@ function attach( dialog ) {
 						__( 'See all %s', 'solrengine' ),
 						numberFormat.format( total ),
 					);
+					// Visible text first, so a voice user saying what they see
+					// still matches the name (WCAG 2.5.3).
+					target
+						.closest( '[data-solrengine-see-all]' )
+						?.setAttribute(
+							'aria-label',
+							sprintf(
+								/* translators: 1: number of results, 2: content type, plural. */
+								__( 'See all %1$s: %2$s', 'solrengine' ),
+								numberFormat.format( total ),
+								label,
+							),
+						);
 				} else if ( 'label' === field ) {
 					target.textContent = label;
 				}
@@ -566,7 +631,7 @@ function attach( dialog ) {
 	/**
 	 * Add results to a section's list.
 	 *
-	 * @param {Element}  list    The section's listbox.
+	 * @param {Element}  list    The section's list.
 	 * @param {Object[]} entries Results.
 	 */
 	function append( list, entries ) {
@@ -609,8 +674,8 @@ function attach( dialog ) {
 		}
 
 		results.querySelectorAll( '[data-solrengine-section]' ).forEach( ( group ) => {
-			const list = group.querySelector( '[role="listbox"]' );
-			const cardsIn = [ ...list.querySelectorAll( '[role="option"]' ) ];
+			const list = group.querySelector( '[data-solrengine-section-results]' );
+			const cardsIn = [ ...list.querySelectorAll( '[data-solrengine-index]' ) ];
 			const columns = window
 				.getComputedStyle( list )
 				.gridTemplateColumns.split( ' ' )
@@ -628,8 +693,6 @@ function attach( dialog ) {
 					Math.min( visible, cardsIn.length );
 			}
 		} );
-
-		setActive( -1 );
 	}
 
 	/**
@@ -643,7 +706,12 @@ function attach( dialog ) {
 		}
 
 		more.hidden = ! hasMore || ! tab;
-		more.disabled = 'loading' === state;
+		// aria-disabled rather than disabled: disabling the button a keyboard
+		// user is on throws their focus to the top of the page.
+		more.setAttribute(
+			'aria-disabled',
+			'loading' === state ? 'true' : 'false',
+		);
 		more.classList.toggle( 'is-loading', 'loading' === state );
 
 		if ( moreLabel ) {
@@ -673,6 +741,7 @@ function attach( dialog ) {
 			button.textContent = `${ entry.label } ${ entry.count }`;
 		}
 
+		button.id = `${ baseId }-tab-${ entry.key || 'all' }`;
 		button.setAttribute( 'role', 'tab' );
 		button.setAttribute( 'aria-selected', selected ? 'true' : 'false' );
 		button.setAttribute( 'aria-controls', results.id );
@@ -708,6 +777,8 @@ function attach( dialog ) {
 		if ( ! data.all && ! tab ) {
 			tabList.hidden = true;
 			tabList.replaceChildren();
+			results.removeAttribute( 'role' );
+			results.removeAttribute( 'aria-labelledby' );
 
 			return;
 		}
@@ -726,6 +797,10 @@ function attach( dialog ) {
 
 		tabList.replaceChildren( ...entries.map( tabButton ) );
 		tabList.hidden = false;
+
+		// The results are what the tabs switch between.
+		results.setAttribute( 'role', 'tabpanel' );
+		results.setAttribute( 'aria-labelledby', `${ baseId }-tab-${ tab || 'all' }` );
 	}
 
 	/**
@@ -736,9 +811,7 @@ function attach( dialog ) {
 	function render( data ) {
 		last = data;
 		items = [];
-		active = -1;
 		grid = null;
-		input.removeAttribute( 'aria-activedescendant' );
 
 		if ( moreController ) {
 			moreController.abort();
@@ -778,13 +851,6 @@ function attach( dialog ) {
 		syncMore();
 		fitSections();
 
-		const lists = [ ...results.querySelectorAll( '[role="listbox"]' ) ];
-
-		input.setAttribute(
-			'aria-controls',
-			lists.map( ( list ) => list.id ).join( ' ' ),
-		);
-		input.setAttribute( 'aria-expanded', items.length ? 'true' : 'false' );
 		dialog.classList.toggle( 'has-results', items.length > 0 );
 
 		if ( ! items.length ) {
@@ -832,16 +898,15 @@ function attach( dialog ) {
 	function idle() {
 		last = null;
 		items = [];
-		active = -1;
 		grid = null;
 		hasMore = false;
 		results.replaceChildren();
+		results.removeAttribute( 'role' );
+		results.removeAttribute( 'aria-labelledby' );
 		syncMore();
 		dialog.classList.remove( 'has-results' );
 		tabList.hidden = true;
 		summaryRow.hidden = true;
-		input.setAttribute( 'aria-expanded', 'false' );
-		input.removeAttribute( 'aria-activedescendant' );
 		message.textContent = __(
 			'Start typing to see results.',
 			'solrengine',
@@ -1114,8 +1179,14 @@ function attach( dialog ) {
 
 	/**
 	 * Load the next page of a type tab into its grid.
+	 *
+	 * Focus moves to the first new card when the visitor asked for the page —
+	 * ↓ past the last card — or was on the button when it arrived. Loaded by
+	 * scrolling, focus stays where it was.
+	 *
+	 * @param {boolean} focusNew Whether to move focus to the first new card.
 	 */
-	async function loadMore() {
+	async function loadMore( focusNew = false ) {
 		if ( ! hasMore || ! tab || ! grid || moreController || controller ) {
 			return;
 		}
@@ -1150,7 +1221,19 @@ function attach( dialog ) {
 				return;
 			}
 
+			const first = items.length;
+			const follows =
+				true === focusNew ||
+				( more && more.contains( document.activeElement ) );
+
 			append( target, Array.isArray( body.results ) ? body.results : [] );
+
+			if ( follows ) {
+				cardLink(
+					target.querySelector( `[data-solrengine-index="${ first }"]` ),
+				)?.focus();
+			}
+
 			page = body.page || page + 1;
 			hasMore = !! body.has_more;
 			status.textContent = sprintf(
@@ -1172,53 +1255,39 @@ function attach( dialog ) {
 				// after a load. The observer reports only changes, so ask
 				// again here.
 				if ( ! state && moreInView ) {
-					window.requestAnimationFrame( loadMore );
+					window.requestAnimationFrame( () => loadMore( false ) );
 				}
 			}
 		}
 	}
 
 	/**
-	 * Mark one result as active.
+	 * The element a card is focused by: its link.
 	 *
-	 * Focus stays in the field, so typing keeps working.
-	 *
-	 * @param {number}  index  Index, or -1 for none.
-	 * @param {boolean} scroll Whether to bring it into view.
+	 * @param {Element|null} element Card.
+	 * @return {HTMLElement|null} The link, or null.
 	 */
-	function setActive( index, scroll = true ) {
-		const visible = options();
-
-		visible.forEach( ( option, i ) => {
-			option.setAttribute(
-				'aria-selected',
-				i === index ? 'true' : 'false',
-			);
-			option.classList.toggle( 'is-active', i === index );
-		} );
-
-		active = index;
-
-		if ( index >= 0 && visible[ index ] ) {
-			input.setAttribute( 'aria-activedescendant', visible[ index ].id );
-
-			if ( scroll ) {
-				visible[ index ].scrollIntoView( { block: 'nearest' } );
-			}
-		} else {
-			input.removeAttribute( 'aria-activedescendant' );
+	function cardLink( element ) {
+		if ( ! element ) {
+			return null;
 		}
+
+		return element.matches( 'a[href]' )
+			? element
+			: element.querySelector( 'a[href]' );
 	}
 
 	/**
-	 * The cards a visitor can see, in order.
+	 * The links of the cards a visitor can see, in order.
 	 *
-	 * @return {Element[]} Cards.
+	 * @return {HTMLElement[]} Links.
 	 */
-	function options() {
+	function cardLinks() {
 		return [
-			...results.querySelectorAll( '[role="option"]:not([hidden])' ),
-		];
+			...results.querySelectorAll( '[data-solrengine-index]:not([hidden])' ),
+		]
+			.map( cardLink )
+			.filter( Boolean );
 	}
 
 	/**
@@ -1364,37 +1433,72 @@ function attach( dialog ) {
 	} );
 
 	input.addEventListener( 'keydown', ( event ) => {
-		const count = options().length;
+		if ( 'ArrowDown' === event.key && ! event.altKey ) {
+			const first = cardLinks()[ 0 ];
 
-		if ( 'ArrowDown' === event.key && count ) {
-			event.preventDefault();
-
-			if ( active + 1 >= count && hasMore ) {
-				// At the end of a tab's grid with more to come: fetch it rather
-				// than wrapping to the top.
-				loadMore();
-			} else {
-				setActive( active + 1 >= count ? 0 : active + 1 );
+			if ( first ) {
+				event.preventDefault();
+				first.focus();
 			}
-		} else if ( 'ArrowUp' === event.key && count ) {
-			event.preventDefault();
-			setActive( active - 1 < 0 ? count - 1 : active - 1 );
 		} else if ( 'Escape' === event.key ) {
 			// Handled here because a search field with text in it takes Escape
 			// to mean "clear me", and the dialog never hears it. A visitor
 			// pressing Escape in a search popup means "close".
 			event.preventDefault();
 			close();
-		} else if ( 'Enter' === event.key && active >= 0 ) {
-			// Only when a result is highlighted. Otherwise the form submits
-			// to the site's own results page, which is what Enter in a search
-			// field has always done.
+		}
+		// Enter submits the form to the site's own results page, which is
+		// what Enter in a search field has always done.
+	} );
+
+	// Arrow keys between cards. Tab reaches them too; this is the quicker
+	// way through a grid of them, and the way back up to the field.
+	results.addEventListener( 'keydown', ( event ) => {
+		const links = cardLinks();
+		const index = links.indexOf( event.target );
+
+		if ( index < 0 || event.ctrlKey || event.metaKey || event.altKey ) {
+			return;
+		}
+
+		const key = event.key;
+		const next = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
+
+		if ( key in next ) {
 			event.preventDefault();
-			follow( options()[ active ] );
+
+			const target = index + next[ key ];
+
+			if ( target < 0 ) {
+				input.focus();
+			} else if ( target < links.length ) {
+				links[ target ].focus();
+			} else if ( hasMore ) {
+				loadMore( true );
+			}
+		} else if ( 'Home' === key || 'End' === key ) {
+			event.preventDefault();
+			links[ 'Home' === key ? 0 : links.length - 1 ].focus();
+		} else if ( 1 === key.length || 'Backspace' === key ) {
+			// Typing on a card goes on typing in the field: focus moves before
+			// the key's default action, so the character lands there.
+			const end = input.value.length;
+
+			input.focus();
+
+			try {
+				input.setSelectionRange( end, end );
+			} catch ( error ) {
+				// Not every input type supports a selection; search does.
+			}
 		}
 	} );
 
-	more?.addEventListener( 'click', loadMore );
+	more?.addEventListener( 'click', () => {
+		if ( 'true' !== more.getAttribute( 'aria-disabled' ) ) {
+			loadMore();
+		}
+	} );
 
 	if ( more && 'IntersectionObserver' in window ) {
 		new window.IntersectionObserver(
@@ -1402,7 +1506,7 @@ function attach( dialog ) {
 				moreInView = entries.some( ( entry ) => entry.isIntersecting );
 
 				if ( moreInView ) {
-					loadMore();
+					loadMore( false );
 				}
 			},
 			{ root: scroller(), rootMargin: `0px 0px ${ PREFETCH_PX }px 0px` },
@@ -1415,7 +1519,8 @@ function attach( dialog ) {
 
 		new window.ResizeObserver( () => {
 			const now = window.getComputedStyle(
-				results.querySelector( '[role="listbox"]' ) || results,
+				results.querySelector( '[data-solrengine-section-results]' ) ||
+					results,
 			).gridTemplateColumns;
 
 			if ( now !== columns ) {

@@ -30,6 +30,7 @@ a seam has leaked and the fix belongs in the code, not the test.
 | `composer test` | Unit tests |
 | `composer test:integration` | WordPress integration tests |
 | `composer check` | Lint, analyse and unit tests |
+| `SOLRENGINE_A11Y_URL=… npm run test:a11y` | Keyboard and axe-core audit of the search popup on a running site; see `tests/a11y/search-modal.js` |
 | `php bin/check-version.php` | Verify the header, constant and readme agree |
 | `bash bin/build-release.sh` | Build the distributable into `build/solrengine` |
 

@@ -11,6 +11,8 @@
  * - `data-solrengine-modal`    the <dialog> itself
  * - `data-solrengine-form`     a form; submitting it opens the full results page
  * - `data-solrengine-input`    the search field
+ * - `data-solrengine-hint`     how to reach the results by keyboard; the
+ *                              field is described by it
  * - `data-solrengine-tab-input` hidden field carrying the selected tab on submit
  * - `data-solrengine-clear`    clears the field
  * - `data-solrengine-close`    closes the popup
@@ -30,8 +32,7 @@
  *   - `data-solrengine-field="label"` the type's plural name
  *   - `data-solrengine-field="count"` its number of matches
  *   - `data-solrengine-see-all`       opens that type's tab; fills `see_all`
- *   - `data-solrengine-section-results` the list the cards are placed in;
- *                                     keep `role="listbox"` on it
+ *   - `data-solrengine-section-results` the list the cards are placed in
  *
  * Result cards are separate templates: see search-modal/result.php.
  *
@@ -80,8 +81,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 				autocapitalize="off"
 				spellcheck="false"
 				enterkeyhint="search"
+				aria-describedby="solrengine-modal-hint"
 				data-solrengine-input
 			/>
+			<span class="screen-reader-text" id="solrengine-modal-hint" data-solrengine-hint><?php esc_html_e( 'Results appear below as you type. Press the down arrow to move to them.', 'solrengine' ); ?></span>
 			<input type="hidden" name="post_type" value="" disabled data-solrengine-tab-input />
 			<span class="solrengine-modal__spinner" aria-hidden="true"></span>
 			<button type="button" class="solrengine-modal__clear" hidden data-solrengine-clear>
@@ -128,7 +131,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false"><path d="M4 10h11m-4.5-4.5L15 10l-4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
 				</button>
 			</div>
-			<ul class="solrengine-section__results" role="listbox" data-solrengine-section-results></ul>
+			<ul class="solrengine-section__results" role="list" data-solrengine-section-results></ul>
 		</section>
 	</template>
 

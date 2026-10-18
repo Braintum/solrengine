@@ -160,8 +160,9 @@ normal results page. The other choice is a plain list of matching titles under
 the search field.
 
 The popup does not open just because someone tabs onto the field with the
-keyboard, it can be used entirely from the keyboard, and it works with screen
-readers.
+keyboard. It can be used entirely from the keyboard — Tab and the arrow keys
+both reach every result — and each result is a link named by its title, so it
+works with screen readers. It is checked against WCAG 2.2 AA.
 
 = Can I change how the search popup looks? =
 
@@ -293,6 +294,8 @@ the same list.
   properties.
 * New REST route `/solrengine/v1/instant`, also answered by the fast path, which
   now falls back to REST on its own when a host blocks it.
+* The popup's results are ordinary links that Tab reaches, named by their
+  titles, with arrow keys between them; no more nested listbox options.
 * Search matches the word being typed as a prefix: "hoo" finds "Hoodie", in the
   popup, on the results page, in the filter counts and in product search alike.
 * Fix: the instant-search fast path now searches product SKUs and attribute

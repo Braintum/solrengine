@@ -24,8 +24,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 ?>
-<li class="solrengine-result solrengine-result--product" role="option" aria-selected="false">
-	<a class="solrengine-result__link" tabindex="-1" data-solrengine-href="url">
+<li class="solrengine-result solrengine-result--product">
+	<a class="solrengine-result__link" data-solrengine-href="url">
 		<span class="solrengine-result__media" data-solrengine-if="thumbnail">
 			<img class="solrengine-result__image" alt="" loading="lazy" decoding="async" data-solrengine-src="thumbnail" />
 		</span>

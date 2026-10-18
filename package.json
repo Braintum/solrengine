@@ -8,8 +8,9 @@
     "build": "wp-scripts build",
     "start": "wp-scripts start",
     "lint:js": "wp-scripts lint-js assets/src",
-    "lint:css": "wp-scripts lint-style assets/src",
-    "format": "wp-scripts format assets/src"
+    "lint:css": "wp-scripts lint-style 'assets/src/**/*.css'",
+    "format": "wp-scripts format assets/src",
+    "test:a11y": "node tests/a11y/search-modal.js"
   },
   "devDependencies": {
     "@wordpress/scripts": "^30.0.0"

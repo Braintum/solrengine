@@ -23,10 +23,14 @@
  *                                     empty: here, the whole image box, so a
  *                                     card without an image is text only
  *
- * The outermost element must be the only one, and is the listbox option: keep
- * `role="option"` on it. After filling a card the script dispatches a bubbling
- * `solrengine:result` event on it, with `{ result, element }` as its detail,
- * for anything a template cannot express.
+ * The outermost element must be the only one, and is a list item. The element
+ * with `data-solrengine-href` is the card's link: the script names it with the
+ * result's title (`aria-label`) and describes it with the type and price
+ * (`aria-describedby`), so put nothing in it that a screen reader must hear and
+ * the title does not say. Keep it the one focusable element in the card; arrow
+ * keys move between cards by it. After filling a card the script dispatches a
+ * bubbling `solrengine:result` event on it, with `{ result, element }` as its
+ * detail, for anything a template cannot express.
  *
  * Text is always inserted as text. A template cannot cause a title to be
  * parsed as markup, and should not try.
@@ -43,8 +47,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 ?>
-<li class="solrengine-result" role="option" aria-selected="false">
-	<a class="solrengine-result__link" tabindex="-1" data-solrengine-href="url">
+<li class="solrengine-result">
+	<a class="solrengine-result__link" data-solrengine-href="url">
 		<span class="solrengine-result__media" data-solrengine-if="thumbnail">
 			<img class="solrengine-result__image" alt="" loading="lazy" decoding="async" data-solrengine-src="thumbnail" />
 		</span>
