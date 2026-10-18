@@ -561,7 +561,12 @@ html.solrengine-modal-is-open {
 	aspect-ratio: 4 / 3;
 	overflow: hidden;
 	background: var(--solrengine-modal-thumb);
-	color: color-mix(in srgb, var(--solrengine-modal-muted) 70%, var(--solrengine-modal-thumb));
+}
+
+/* The template removes the box when there is no thumbnail; this covers one
+   whose image the script refused, so no empty box is left behind. */
+.solrengine-modal .solrengine-result__media:not(:has(img)) {
+	display: none;
 }
 
 .solrengine-modal .solrengine-result--product .solrengine-result__media {
@@ -618,6 +623,17 @@ html.solrengine-modal-is-open {
 	-webkit-box-orient: vertical;
 }
 
+/* A card without an image is text only: clear the arrow, and let the excerpt
+   use the height an image would have taken beside cards that have one. */
+.solrengine-modal .solrengine-result__body:first-child {
+	padding-top: 1rem;
+	padding-right: 3rem;
+}
+
+.solrengine-modal .solrengine-result__body:first-child .solrengine-result__excerpt {
+	-webkit-line-clamp: 6;
+}
+
 .solrengine-modal .solrengine-mark {
 	padding: 0 0.0625em;
 	border-radius: 3px;
@@ -643,8 +659,8 @@ html.solrengine-modal-is-open {
 	text-decoration: line-through;
 }
 
-/* In the media box's corner, which every card has whether or not it has an
-   image. */
+/* The card's top corner: over the image, or beside the type on a card
+   without one. */
 .solrengine-modal .solrengine-result__go {
 	position: absolute;
 	top: 0.625rem;
@@ -793,6 +809,16 @@ html.solrengine-modal-is-open {
 
 	.solrengine-modal .solrengine-result__excerpt {
 		display: none;
+	}
+
+	.solrengine-modal .solrengine-result__body:first-child {
+		padding: 0.75rem 2.5rem 0.75rem 0.75rem;
+	}
+
+	/* Without an image, the excerpt is all a card has to say. */
+	.solrengine-modal .solrengine-result__body:first-child .solrengine-result__excerpt {
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
 	}
 
 	.solrengine-modal .solrengine-modal__order {

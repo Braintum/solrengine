@@ -26,8 +26,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 ?>
 <li class="solrengine-result solrengine-result--product" role="option" aria-selected="false">
 	<a class="solrengine-result__link" tabindex="-1" data-solrengine-href="url">
-		<span class="solrengine-result__media">
-			<svg class="solrengine-result__placeholder" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false"><path d="M5.5 8h13l-1 11.5a1 1 0 0 1-1 .9h-9a1 1 0 0 1-1-.9L5.5 8Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M9 10V7a3 3 0 0 1 6 0v3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+		<span class="solrengine-result__media" data-solrengine-if="thumbnail">
 			<img class="solrengine-result__image" alt="" loading="lazy" decoding="async" data-solrengine-src="thumbnail" />
 		</span>
 		<span class="solrengine-result__body">

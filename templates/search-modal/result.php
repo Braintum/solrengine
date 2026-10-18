@@ -18,9 +18,10 @@
  * - `data-solrengine-field="price"`   a product's price
  * - `data-solrengine-href="url"`      sets href
  * - `data-solrengine-src="thumbnail"` sets src, or removes the element when
- *                                     there is no image (the placeholder icon
- *                                     behind it then shows)
- * - `data-solrengine-if="excerpt"`    removes the element when that field is empty
+ *                                     there is no image
+ * - `data-solrengine-if="thumbnail"`  removes the element when that field is
+ *                                     empty: here, the whole image box, so a
+ *                                     card without an image is text only
  *
  * The outermost element must be the only one, and is the listbox option: keep
  * `role="option"` on it. After filling a card the script dispatches a bubbling
@@ -44,8 +45,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 ?>
 <li class="solrengine-result" role="option" aria-selected="false">
 	<a class="solrengine-result__link" tabindex="-1" data-solrengine-href="url">
-		<span class="solrengine-result__media">
-			<svg class="solrengine-result__placeholder" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false"><path d="M7 3.5h6.5L18 8v11.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M13 3.5V8h5M9 12.5h6M9 15.5h6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+		<span class="solrengine-result__media" data-solrengine-if="thumbnail">
 			<img class="solrengine-result__image" alt="" loading="lazy" decoding="async" data-solrengine-src="thumbnail" />
 		</span>
 		<span class="solrengine-result__body">

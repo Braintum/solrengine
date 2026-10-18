@@ -265,11 +265,16 @@ Slots are attributes:
 | `data-solrengine-field="author"` | The author's display name |
 | `data-solrengine-field="price"` | The price, marked up as WooCommerce marks one up |
 | `data-solrengine-href="url"` | Sets `href` |
-| `data-solrengine-src="thumbnail"` | Sets `src`, or removes the element when there is none, so anything behind it shows: the bundled cards keep a placeholder icon there |
+| `data-solrengine-src="thumbnail"` | Sets `src`, or removes the element when there is none |
 | `data-solrengine-if="<field>"` | Removes the element when that field is empty |
 
 Values are inserted as text, never as markup, and URLs are accepted only when
 they are `http` or `https`.
+
+The bundled cards put `data-solrengine-if="thumbnail"` on the image box, so a
+result without an image — most pages — is a text-only card with a longer excerpt
+rather than a card with an empty picture. Keep that attribute in a copy that
+should behave the same way.
 
 For anything a template cannot express, listen for the card event:
 
