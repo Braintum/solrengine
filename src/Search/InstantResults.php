@@ -208,9 +208,12 @@ final class InstantResults {
 	 * @return SearchQuery
 	 */
 	public function query( string $text, string $tab, int $site_id, int $page = 1, ?int $per_page = null ): SearchQuery {
+		// Completion, because the popup searches as the visitor types: "hoo"
+		// is part of "hoodie", not a word of its own.
 		$query = ( new SearchQuery( $text, $site_id ) )
 			->with_pagination( $page, $per_page ?? $this->per_page )
-			->with_facet( self::TAB_KEY );
+			->with_facet( self::TAB_KEY )
+			->with_completion();
 
 		if ( array() !== $this->post_types ) {
 			$query = $query->with_post_types( $this->post_types );

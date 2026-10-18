@@ -173,7 +173,7 @@ final class SuggestTranslator {
 		// A wildcard is added only to a plain word. Anything else is passed
 		// through, so this never assembles syntax out of punctuation the
 		// visitor typed.
-		if ( 1 === preg_match( '/^[\p{L}\p{N}]{2,}$/u', $last ) ) {
+		if ( PrefixTerms::completable( $last ) ) {
 			$last .= '*';
 		}
 

@@ -40,6 +40,7 @@ final class SearchQuerySerialisationTest extends TestCase {
 			->with_pagination( 4, 25 )
 			->with_language( 'de-DE' )
 			->with_highlight()
+			->with_completion()
 			->with_facet( 'category', '1/12' )
 			->with_facet( 'post_type' );
 	}
@@ -99,6 +100,7 @@ final class SearchQuerySerialisationTest extends TestCase {
 			'per_page'   => $base->with_pagination( 1, 20 ),
 			'language'   => $base->with_language( 'fr' ),
 			'highlight'  => $base->with_highlight(),
+			'completion' => $base->with_completion(),
 			'facet'      => $base->with_facet( 'category' ),
 			'documents'  => $base->without_documents(),
 		);

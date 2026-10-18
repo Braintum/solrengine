@@ -549,6 +549,15 @@ final class Bootstrap {
 			}
 		);
 
+		// Its own service so that a process which loads no plugins can answer
+		// it another way: see InstantEndpoint::container().
+		$container->share(
+			'woocommerce.active',
+			static function (): bool {
+				return WooCommerce::is_active();
+			}
+		);
+
 		$container->share(
 			'search.relevance',
 			static function ( Container $c ): RelevanceProfile {
@@ -558,7 +567,7 @@ final class Bootstrap {
 					// exact answer to an exact question, and an attribute value
 					// is what a shopper types when they do not know the product
 					// name. Neither field exists on a site without WooCommerce.
-					WooCommerce::is_active() ? ProductFields::relevance_boosts() : array()
+					$c->get( 'woocommerce.active' ) ? ProductFields::relevance_boosts() : array()
 				);
 			}
 		);

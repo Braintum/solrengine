@@ -118,6 +118,48 @@ final class QueryTranslatorTest extends TestCase {
 		$this->assertSame( DocumentFields::DATE . ' desc', $params['sort'] );
 	}
 
+	// -- Completion ----------------------------------------------------------
+
+	public function test_without_completion_words_match_as_written(): void {
+		$params = $this->translator()->translate( new SearchQuery( 'hoo', 1 ) );
+
+		$this->assertSame( 'hoo', $params['se_terms'] );
+		$this->assertArrayNotHasKey( 'bq', $params );
+		$this->assertArrayNotHasKey( 'se_exact', $params );
+	}
+
+	public function test_completion_matches_the_last_word_as_a_prefix(): void {
+		$params = $this->translator()->translate( ( new SearchQuery( 'red  hoo', 1 ) )->with_completion() );
+
+		$this->assertSame( 'red hoo*', $params['se_terms'] );
+	}
+
+	public function test_completion_ranks_by_the_text_as_typed(): void {
+		$params = $this->translator()->translate( ( new SearchQuery( 'hoodie', 1 ) )->with_completion() );
+
+		// The typed text travels as a parameter, like the main text, and the
+		// boost query blanks its own bq and boost so it cannot apply itself.
+		$this->assertSame( 'hoodie', $params['se_exact'] );
+		$this->assertSame( "{!edismax bq='' boost='' v=\$se_exact}", $params['bq'] );
+		$this->assertSame( '{!edismax v=$se_terms}', $params['q'] );
+	}
+
+	public function test_completion_leaves_words_it_cannot_complete_alone(): void {
+		foreach ( array( 'a', 'wi-fi', '"red', 'hoo*', 'C++' ) as $text ) {
+			$params = $this->translator()->translate( ( new SearchQuery( $text, 1 ) )->with_completion() );
+
+			$this->assertSame( $text, $params['se_terms'], $text );
+			$this->assertArrayNotHasKey( 'bq', $params, $text );
+		}
+	}
+
+	public function test_completion_does_not_decorate_a_fuzzy_retry(): void {
+		$params = $this->translator()->translate( ( new SearchQuery( 'hoodei', 1 ) )->with_completion(), 'fuzzy' );
+
+		$this->assertSame( 'hoodei~1', $params['se_terms'] );
+		$this->assertArrayNotHasKey( 'bq', $params );
+	}
+
 	// -- Strategies ----------------------------------------------------------
 
 	public function test_the_standard_strategy_is_not_fuzzy(): void {

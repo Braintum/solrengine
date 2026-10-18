@@ -10,6 +10,7 @@ namespace SolrEngine\Rest;
 use SolrEngine\Bootstrap;
 use SolrEngine\Contracts\Suggestions;
 use SolrEngine\Contracts\SuggestQuery;
+use SolrEngine\Integration\WooCommerce\WooCommerce;
 use SolrEngine\Search\InstantResults;
 use SolrEngine\Search\SearchService;
 use SolrEngine\Search\SuggestPayload;
@@ -109,7 +110,7 @@ final class InstantEndpoint {
 	/**
 	 * SolrEngine's container, adjusted for a process with no plugins or theme.
 	 *
-	 * The factories come from {@see Bootstrap::services()} unchanged. Two are
+	 * The factories come from {@see Bootstrap::services()} unchanged. Four are
 	 * replaced, and only because their definitions assume a boot this process
 	 * did not perform:
 	 *
@@ -125,6 +126,10 @@ final class InstantEndpoint {
 	 * - `rest.rate_limiter.viewer` would follow `viewer`, and an unvalidated
 	 *   cookie must not exempt anyone from rate limiting. See
 	 *   {@see AnonymousViewer}.
+	 * - `woocommerce.active` asks WooCommerce's own functions, which are not
+	 *   loaded here even on a shop. Read from the active-plugin options
+	 *   instead, so the popup searches SKUs and attribute values on this
+	 *   surface exactly as it does through REST.
 	 *
 	 * Everything else — configuration, credentials, endpoint validation, the
 	 * transport, the backend registry, the search service — resolves from the
@@ -159,6 +164,13 @@ final class InstantEndpoint {
 			'rest.rate_limiter.viewer',
 			static function (): AnonymousViewer {
 				return new AnonymousViewer();
+			}
+		);
+
+		$container->share(
+			'woocommerce.active',
+			static function (): bool {
+				return WooCommerce::is_switched_on();
 			}
 		);
 

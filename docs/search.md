@@ -230,7 +230,31 @@ would have been silently broken for everyone else.
 
 A prefix query needs no configuration and works on any collection with the
 schema contract applied. Only the last word gets a wildcard, because it is the
-only one still being typed.
+only one still being typed, and only when it is a plain word of two or more
+letters or digits: punctuation is never turned into syntax, and a one-letter
+prefix expands to most of the term dictionary. The rule lives in
+`Search\PrefixTerms`, which the search popup uses too.
+
+## Completing a search query
+
+A `SearchQuery` can ask for the same treatment with `with_completion()` (since
+0.11.0); the search popup does, because it searches as the visitor types. The
+last word is then matched as a prefix, so "hoo" finds "Hoodie", and every other
+word still has to match as written.
+
+A wildcard match scores every document alike, which on its own would rank
+"Hoodie" level with "Hoodie with Logo" even when the visitor typed the whole
+word. So the text exactly as typed is sent alongside as a boost query (`bq`):
+it reorders what the prefix query matched and never adds to it. Measured on the
+development index, Solr answered completed queries in 8–26 ms.
+
+Prefixes match the neutral `se_txt_*` fields, which are not stemmed. They do not
+match a language's stemmed fields — `hoodie*` cannot match the stem `hoodi` —
+but the neutral fields are always searched, so nothing is lost. The fuzzy retry
+is not completed: a word already carrying `~1` is not a plain word.
+
+The results page does not complete. A visitor who presses Enter on "hoo" gets the
+theme's results page for "hoo", which matches whole words.
 
 ## Privacy
 

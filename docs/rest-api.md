@@ -178,6 +178,8 @@ results from one type.
 }
 ```
 
+The last word of `q` is matched as a prefix, as the popup needs while a visitor
+types: `q=hoo` finds "Hoodie". See [search.md](search.md#completing-a-search-query).
 With `post_type` set, `sections` is empty and `results` holds the page asked for;
 `has_more` says whether another follows. `counts` is unaffected by `post_type`: the tab is applied as the tagged
 `post_type` filter, which the `post_type` facet excludes from its own counts.

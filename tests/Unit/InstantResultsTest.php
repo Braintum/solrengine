@@ -85,6 +85,8 @@ final class InstantResultsTest extends TestCase {
 		$this->assertSame( array(), $query->filters() );
 		$this->assertSame( 1, $query->page() );
 		$this->assertSame( InstantResults::PER_PAGE, $query->per_page() );
+		// Text still being typed: "hoo" is part of "hoodie".
+		$this->assertTrue( $query->completes_last_word() );
 	}
 
 	public function test_selected_tab_is_a_filter_not_a_narrower_post_type_list(): void {

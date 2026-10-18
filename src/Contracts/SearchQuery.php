@@ -106,6 +106,13 @@ final class SearchQuery {
 	private $highlight = false;
 
 	/**
+	 * Whether the last word is matched as a prefix.
+	 *
+	 * @var bool
+	 */
+	private $completion = false;
+
+	/**
 	 * Facets to count, keyed by registered facet key.
 	 *
 	 * The value is the node a hierarchy facet counts the children of, and an
@@ -265,6 +272,17 @@ final class SearchQuery {
 	 */
 	public function wants_highlight(): bool {
 		return $this->highlight;
+	}
+
+	/**
+	 * Whether the last word is matched as a prefix, as text still being typed.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @return bool
+	 */
+	public function completes_last_word(): bool {
+		return $this->completion;
 	}
 
 	/**
@@ -473,6 +491,26 @@ final class SearchQuery {
 	}
 
 	/**
+	 * A copy that matches its last word as a prefix.
+	 *
+	 * For text that is still being typed: "hoo" finds "hoodie". Only the last
+	 * word, and only a plain word of two or more letters or digits; see
+	 * {@see \SolrEngine\Search\PrefixTerms}. A backend that already matches
+	 * partial words may ignore it.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param bool $completion Whether to complete the last word.
+	 * @return self
+	 */
+	public function with_completion( bool $completion = true ): self {
+		$clone             = clone $this;
+		$clone->completion = $completion;
+
+		return $clone;
+	}
+
+	/**
 	 * A stable key identifying this query, for caching.
 	 *
 	 * @since 0.4.0
@@ -529,6 +567,7 @@ final class SearchQuery {
 			'per_page'     => $this->per_page,
 			'language'     => $this->language,
 			'highlight'    => $this->highlight,
+			'completion'   => $this->completion,
 			'facets'       => $this->facets,
 			'documents'    => $this->documents,
 		);
@@ -563,6 +602,7 @@ final class SearchQuery {
 		$query->per_page   = max( 1, (int) ( $state['per_page'] ?? 10 ) );
 		$query->language   = isset( $state['language'] ) ? (string) $state['language'] : '';
 		$query->highlight  = ! empty( $state['highlight'] );
+		$query->completion = ! empty( $state['completion'] );
 		$query->documents  = ! isset( $state['documents'] ) || (bool) $state['documents'];
 
 		foreach ( (array) ( $state['filters'] ?? array() ) as $key => $values ) {

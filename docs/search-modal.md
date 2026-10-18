@@ -93,6 +93,18 @@ page. The counts are the registered `post_type` facet, and the selected tab is t
 registered `post_type` filter; because a facet's own filter is tagged and excluded
 from its counts, narrowing to one tab leaves the others' numbers intact.
 
+**Matching as you type.** The last word is matched as a prefix — "hoo" finds
+"Hoodie", "beanie lo" finds "Beanie with Logo" — while every earlier word must
+match as written. Whole words still rank as they would on the results page. See
+[search.md](search.md#completing-a-search-query) for how, and for what does not
+complete: one-letter words, words with punctuation, and the results page itself.
+
+**WooCommerce fields on both surfaces.** On a shop, SKUs and attribute values
+are searched as well as titles and content. The fast path loads no plugins, so it
+learns that WooCommerce is active from the site's active-plugin options rather
+than from WooCommerce itself; before 0.11.0 it did not search those fields at
+all, and could find fewer products than the REST route.
+
 **What All costs.** One query for the counts, which fetches no documents, then
 one small query per type with a match, for that type's first few cards. On a site
 indexing posts, pages and products that is at most four Solr queries per
