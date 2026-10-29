@@ -41,11 +41,13 @@
 			throwing (see src/Contracts/Result.php).
 
 			Plugin Check does not read this file and reports the same sniff as a
-			blocking error, so CI passes it the same exclusion by name. The one
-			place it fires is Support/Container.php, where escaping would make
-			the container require WordPress to be loaded before it could report
-			a typo in a service name — and the unit suite, which loads no
-			WordPress, fails the moment that is attempted.
+			blocking error. The one place it fires is Support/Container.php,
+			where escaping would make the container require WordPress to be
+			loaded before it could report a typo in a service name — and the
+			unit suite, which loads no WordPress, fails the moment that is
+			attempted. That file carries a phpcs:disable/enable pair around its
+			two throws, so Plugin Check runs with no ignored codes and a new
+			unescaped exception anywhere else is still reported.
 		-->
 		<exclude name="WordPress.Security.EscapeOutput.ExceptionNotEscaped"/>
 

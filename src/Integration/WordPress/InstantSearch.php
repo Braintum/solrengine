@@ -57,66 +57,6 @@ final class InstantSearch {
 	}
 
 	/**
-	 * The URL autocomplete calls.
-	 *
-	 * The fast path when it is available, the REST route otherwise. See
-	 * {@see self::fast_path_url()}.
-	 *
-	 * @return string
-	 */
-	private function suggest_endpoint(): string {
-		$fast = self::fast_path_url( $this->config );
-
-		return '' !== $fast ? $fast : rest_url( 'solrengine/v1/suggest' );
-	}
-
-	/**
-	 * The fast-path address, or '' when it must not be used.
-	 *
-	 * Shared by autocomplete and the search popup, so one switch governs both.
-	 *
-	 * The fast path is `instant.php`, which answers on a SHORTINIT boot instead
-	 * of through `rest_api_init`. Measured on a WooCommerce site with OPcache
-	 * warm, the REST route spent 830ms reaching its callback and 67ms
-	 * answering: the fast path removes that 830ms and returns byte-identical
-	 * JSON. See {@see \SolrEngine\Rest\InstantEndpoint}.
-	 *
-	 * The REST routes are unchanged and remain the documented, hookable
-	 * endpoints. A site that needs its search filters to run turns the fast
-	 * path off and pays the bootstrap.
-	 *
-	 * '' when `instant.php` is missing, too, so a partial deployment degrades
-	 * in latency rather than breaking the field.
-	 *
-	 * @since 0.11.0
-	 *
-	 * @param Config $config Configuration.
-	 * @return string
-	 */
-	public static function fast_path_url( Config $config ): string {
-		/**
-		 * Filters whether autocomplete and the search popup use the fast path.
-		 *
-		 * Returning false sends both through their REST routes instead, where
-		 * `rest_api_init` has run and every search filter fires.
-		 *
-		 * @since 0.10.2
-		 *
-		 * @param bool $enabled Whether to use the fast path.
-		 */
-		$fast = (bool) apply_filters(
-			'solrengine_instant_fast_path',
-			$config->get_bool( 'search.instant_fast_path', true )
-		);
-
-		if ( ! $fast || ! is_readable( SOLRENGINE_PLUGIN_DIR . 'instant.php' ) ) {
-			return '';
-		}
-
-		return SOLRENGINE_PLUGIN_URL . 'instant.php';
-	}
-
-	/**
 	 * The CSS selector for the theme's search fields.
 	 *
 	 * Shared with the search popup, which opens from the same fields.
@@ -186,7 +126,7 @@ final class InstantSearch {
 			self::HANDLE,
 			'solrEngineInstantSearch',
 			array(
-				'endpoint' => $this->suggest_endpoint(),
+				'endpoint' => rest_url( 'solrengine/v1/suggest' ),
 				'limit'    => $this->config->get_int( 'search.instant_limit', 8 ),
 				'minimum'  => SuggestQuery::MIN_LENGTH,
 				'selector' => self::selector(),

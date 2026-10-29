@@ -200,7 +200,7 @@ Instant search comes in two forms, chosen on the settings screen: a **search
 popup** with result cards and content-type tabs, which is the default and is
 documented in [search-modal.md](search-modal.md), and the **suggestion list**
 described here — a dropdown of matching titles under the field. Both attach to
-the theme's own search field, share the fast path below, and are switched by
+the theme's own search field, answer through the REST API, and are switched by
 `search.instant_mode`.
 
 Suggestions appear as a visitor types, attached to the search field the theme
@@ -277,14 +277,10 @@ visibility are applied server-side and cannot be removed by a caller or a hook.
 An autocomplete leaking a private title leaks it as completely as a results page
 does, so it is tested the same way.
 
-## The endpoints
-
-Two addresses answer autocomplete with the same JSON. The search field uses the
-first; the second is the documented, hookable one.
+## The endpoint
 
 ```
-GET /wp-content/plugins/solrengine/instant.php?q=macb&limit=8   the fast path
-GET /wp-json/solrengine/v1/suggest?q=macb&limit=8               the REST route
+GET /wp-json/solrengine/v1/suggest?q=macb&limit=8
 ```
 
 ```json
@@ -297,8 +293,8 @@ GET /wp-json/solrengine/v1/suggest?q=macb&limit=8               the REST route
 }
 ```
 
-The response shape is produced by one class for both, so the browser cannot tell
-which answered.
+The response shape is produced by one class, `Search\SuggestPayload`, so any
+other surface that ever answers autocomplete returns exactly this body.
 
 A backend failure returns an empty list rather than an error. Autocomplete is an
 enhancement: a visitor whose suggestions stop appearing can still press enter
@@ -331,8 +327,7 @@ always does something predictable.
 ## Where the time goes
 
 Solr answers a prefix query in single-digit milliseconds. What a visitor
-experiences is dominated by everything WordPress does before the query runs, and
-that is the reason autocomplete does not arrive through the REST API.
+experiences is dominated by everything WordPress does before the query runs.
 
 A REST request is dispatched through `rest_api_init`, which is where every active
 plugin registers its own routes. Measured on a WooCommerce site with OPcache
@@ -341,54 +336,21 @@ answering it — 92% of the latency was other plugins booting, on the one reques
 type that fires on every keystroke. No amount of tuning inside the callback
 reaches a cost paid before it runs.
 
-`instant.php` therefore answers without the REST API. It boots WordPress with
-`SHORTINIT` — database and options, no plugins, no theme, no REST server — and
-calls the same `SearchService` the REST route calls. On the machine these
-figures come from, with OPcache enabled and the database on the same host, that
-is a median of under 30ms against roughly 620ms for the REST route.
-
-Three things dominate what remains, in order:
-
-| Cost | Why |
-| --- | --- |
-| The `SHORTINIT` boot | WordPress core, plus connecting to the database |
-| Option reads | One `alloptions` query, which WordPress always makes |
-| The Solr round trip | Single-digit milliseconds on a local Solr |
+Earlier development builds answered autocomplete from a separate file that
+booted WordPress with `SHORTINIT` and skipped that cost. It has been removed for
+the first WordPress.org release, because the directory does not accept a plugin
+file that loads WordPress itself. A lighter path may return once it can be done
+in a way the directory accepts.
 
 Two settings outside the plugin matter more than anything inside it. **OPcache**
 must be enabled: without it PHP recompiles every file on every request, which on
 a WooCommerce site measured over 20MB of source and several seconds. And the
 **database should be local to the web server** — a database on another host adds
-its round trip to each of the queries above, and on a wireless link that latency
-also varies wildly.
+its round trip to each query WordPress makes during the boot.
 
 A persistent object cache helps on top of both, because repeated prefixes are
-served from the cache without reaching Solr.
-
-## What the fast path does not do
-
-No plugin or theme is loaded in a `SHORTINIT` process, so nothing registers a
-hook there. For autocomplete that means:
-
-- `solrengine_suggest_query` and `solrengine_suggestions` have no listeners.
-- No taxonomy is registered, because nothing has run `init`. The fast path
-  accepts no filter parameters at all rather than accepting them and quietly
-  dropping them.
-
-Everything the query itself guarantees is unaffected, because those properties
-belong to the query rather than to the bootstrap: the site scope and the
-public-visibility filter are built server-side, typed text is bound as a
-parameter and never becomes syntax, the endpoint is the validated one from
-configuration, and credentials are decrypted from the same salts. The circuit
-breaker is shared, so a backend the results page has given up on is one
-autocomplete stops waiting for too.
-
-A site that needs its suggest filters to run on every keystroke turns the fast
-path off and gets the REST route, unchanged:
-
-```php
-add_filter( 'solrengine_instant_fast_path', '__return_false' );
-```
+served from the cache without reaching Solr. The 150 ms debounce and the browser
+cache above keep the number of requests down.
 
 ## Customising
 
@@ -398,8 +360,7 @@ add_filter( 'solrengine_instant_search_selector', function () {
 	return '.my-theme-search input';
 } );
 
-// Reshape suggestions before they are returned. Runs on the REST route; see
-// above for why the fast path has no listeners.
+// Reshape suggestions before they are returned.
 add_filter( 'solrengine_suggestions', function ( $suggestions, $query ) {
 	return $suggestions;
 }, 10, 2 );
@@ -412,5 +373,4 @@ add_filter( 'solrengine_suggestions', function ( $suggestions, $query ) {
 | `search.instant_enabled` | `false` | Whether autocomplete is attached at all |
 | `search.instant_mode` | `modal` | `modal` for the [search popup](search-modal.md), `suggest` for the suggestion list |
 | `search.instant_limit` | `8` | Suggestions requested. The search popup pages its own results |
-| `search.instant_fast_path` | `true` | Answer from `instant.php` rather than the REST route |
 | `search.instant_timeout_ms` | `1500` | How long to wait for Solr. Deliberately far below the 10s a search allows: a suggestion arriving after two more keystrokes is not a suggestion |

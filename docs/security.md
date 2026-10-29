@@ -195,66 +195,26 @@ Two leakage paths that return no documents and are easy to miss:
   On a shared multisite collection it is the only thing separating tenants, so
   it is treated as a security control rather than a scoping convenience.
 
-## The instant-search entry point
+## Entry points
 
-`instant.php` is reachable directly over HTTP and answers autocomplete on a
-`SHORTINIT` boot. Being a second door into the plugin, it is worth stating what it
-does and does not rely on.
+`solrengine.php` is the only way into the plugin, and every shipped PHP file
+either refuses direct access or contains nothing that runs when loaded.
+`bin/check-direct-access.php` enforces that in `composer check`, and Plugin Check
+enforces it again in CI against the built package, with no ignored codes.
 
-**It reads, and only reads.** One prefix query for at most twenty short rows,
-or — with `mode=results`, for the search popup — one search for at most twenty
-results and a post-type count. No parameter reaches Solr as syntax, no state is
-written, and there is nothing to forge — which is why it carries no nonce. The
-popup's tab is a post type checked against the indexed list from configuration,
-and its text is capped at 200 characters, exactly as the REST route's argument
-schema caps it.
+Development builds before the first WordPress.org release also shipped
+`instant.php`, a file requested directly over HTTP that booted WordPress with
+`SHORTINIT` to answer autocomplete and the search popup faster. It was removed:
+the directory does not accept a plugin file that loads WordPress itself, it had
+to be the one file without a direct-access guard, and it reached Solr through
+cURL rather than the HTTP API. Autocomplete and the popup now answer only
+through their REST routes, under the controls described above. Any lighter path
+that returns later must carry the same site scope, visibility filter and rate
+limiting as the route it shortcuts.
 
-**The query's guarantees are the query's, not the bootstrap's.** The site scope
-and the public-visibility filter are built by `SuggestTranslator` — and for the
-popup by `QueryTranslator`, the same translator a results page uses — on the
-server, and are unreachable from the query string. Typed text is bound as a Solr
-parameter. The endpoint is the validated one from configuration, and credentials
-are decrypted through the same `Encryption` from the same salts.
-
-**The site is resolved by WordPress, never by a parameter.** There is no `site`
-argument. On multisite the blog comes from the host and path WordPress itself
-resolved, because `se_i_site` is what separates tenants.
-
-**`CookieViewer` is not authentication.** In a `SHORTINIT` process there is no
-user stack, so the presence of a `wordpress_logged_in_` cookie is noticed and
-never validated. It grants nothing: its only consequence is whether one
-suggestion list may be shared in the cache. A forged or expired cookie makes it
-answer "signed in", which costs the sender a cache entry and gains them nothing.
-What matters is the direction of the error — a signed-in user is never mistaken
-for anonymous, which is the mistake that would leak one person's view into
-another's cache.
-
-**No path comes from the request.** `wp-load.php` is found by walking up from
-`__FILE__`, never from `DOCUMENT_ROOT` or any other attacker-influenced value,
-because a path taken from a request is how a file-inclusion bug gets written.
-
-**A broken install answers an empty list.** A missing autoloader or an
-unconfigured backend returns `{"suggestions":[]}` rather than a fatal or a stack
-trace, and error messages never echo the Solr host.
-
-**It is the one file in the package without a direct-access guard**, and that is
-deliberate rather than an oversight: `if ( ! defined( 'ABSPATH' ) ) exit;` here
-would exit before the line that loads WordPress and defines `ABSPATH`. Plugin
-Check has no per-file exemption for a file that is meant to answer a request, so
-the workflow suppresses that check and `bin/check-direct-access.php` replaces it
-with the narrow rule — every other shipped PHP file must guard or must contain
-nothing that runs when loaded, and this file is named as the single exception. A
-second unguarded file cannot appear without failing CI.
-
-**Results mode is rate limited; suggest mode is not yet.** The popup's results
-mode calls the same `RateLimiter`, under the same `instant` bucket, as
-`GET /solrengine/v1/instant`. Here the limiter is handed `AnonymousViewer` rather
-than `CookieViewer`: signed-in users are exempt from the limit, and an unvalidated
-cookie must not buy that exemption, so in this process nobody is exempt.
-Autocomplete's suggest mode still runs without the limiter — that is open with
-the fast-path launch decision. Rate limiting also depends on `wp_cache_*`
-outliving the request, so it is only effective on a site with a persistent object
-cache — without one, the counter is per-request memory on either route.
+Rate limiting depends on `wp_cache_*` outliving the request, so it is only
+effective on a site with a persistent object cache — without one, the counter is
+per-request memory.
 
 ## Front-end templates
 

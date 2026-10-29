@@ -68,13 +68,10 @@ was deliberately placed:
 solrengine.php               Plugin entry point and requirement gate. Parses on
                              PHP 5.6 by necessity: it is what reports that PHP
                              is too old
-instant.php                  Second entry point. Answers autocomplete and the
-                             search popup on a SHORTINIT boot, bypassing the
-                             REST API
 templates/                   Front-end templates a theme overrides from
                              yourtheme/solrengine/. Today: the search popup
-constants.php                Version, paths and schema contract version. Shared
-                             by both entry points, so they cannot disagree
+constants.php                Version, paths and schema contract version, in
+                             their own file so no entry point redefines them
 src/Bootstrap.php            Composition root. The only class that knows how
                              anything is constructed. Start reading here
 
@@ -99,8 +96,8 @@ src/Support/                 Container, Config, Credentials, Encryption, Tables,
                              Upgrade, and the implementations of Viewer, Cache
                              and Breaker
 src/Backend/BackendRegistry  Which backends exist, which indexes, which searches
-src/Backend/Solr/            Endpoint validator, HTTP transport and its two
-                             senders, the adapter
+src/Backend/Solr/            Endpoint validator, HTTP transport and its
+                             sender, the adapter
 src/Backend/Memory/          Second adapter. Proves the contracts hold without
                              Solr; reports itself managed. Development only
 src/Documents/               WordPress object -> Document
@@ -113,8 +110,7 @@ src/Integration/WooCommerce/ Products, shop queries, catalogue facets
 src/Integration/Multilingual/ WPML, Polylang, core locale
 src/Language/                Language tags; the site's languages
 src/Multisite/               Network configuration and this site's scope
-src/Rest/                    search, facets, suggest, instant, status, and the
-                             instant-search endpoint behind instant.php
+src/Rest/                    search, facets, suggest, instant, status
 src/Admin/                   Connection, Dashboard, Content, Search, Tools, Network
 src/Cli/                     Every WP-CLI command
 ```
@@ -160,62 +156,52 @@ Hooking the query layer rather than the template layer is what keeps themes,
 block themes, page builders and WooCommerce loops working — none of them can tell
 the difference.
 
-**Autocomplete.** The same service, reached without the REST API, because
-`rest_api_init` is where every active plugin registers its routes and that cost
-is paid before any callback runs.
+**Autocomplete** goes through `GET /solrengine/v1/suggest`.
 
 ```
-instant.php                        SHORTINIT: database and options only.
-                                   No plugins, no theme, no REST server
-  -> Bootstrap::services()         the same factories boot() registers,
-                                   with no hooks attached
-  -> Rest\InstantEndpoint          reads q and limit; contributes no search logic
-  -> Search\SearchService          cache, circuit breaker, hooks
+theme search field
+  -> assets/src/instant-search.js    debounce, abort, cache
+  -> Rest\SearchController::handle_suggest
+  -> Search\SearchService            cache, circuit breaker, hooks
   -> SearchBackend::suggest
-  -> Search\SuggestTranslator      the site scope and visibility filter
-  -> HttpTransport -> CurlSender
-  -> Search\SuggestionParser       documents -> Suggestions
-  -> Search\SuggestPayload         the JSON both endpoints return
+  -> Search\SuggestTranslator        the site scope and visibility filter
+  -> HttpTransport -> WpHttpSender
+  -> Search\SuggestionParser         documents -> Suggestions
+  -> Search\SuggestPayload           the JSON the field reads
 ```
 
-`Bootstrap::services()` is what makes this one composition rather than two.
-Registration is lazy, so naming every factory costs nothing and the endpoint pays
-only for what it resolves. Two factories are overridden, and only because their
-definitions assume a boot this process did not perform: `search.taxonomies`,
-since nothing has run `init`, and `viewer`, since there is no user stack to ask.
-
-**The search popup** takes the same road with `mode=results`, and the same
-discipline: `instant.php` and `GET /solrengine/v1/instant` both call
-`Search\InstantResults::answer()`, which builds an ordinary `SearchQuery` and owns
-the response shape, so neither surface holds search logic and the browser cannot
-tell which replied. The popup prefers the fast path and switches to REST on its own
-if the fast path answers with anything but SolrEngine's JSON. Its markup is PHP
-templates rendered once per page — on a full boot, where the theme can override
-them — into `<template>` elements the script fills; see
+**The search popup** goes through `GET /solrengine/v1/instant`, which calls
+`Search\InstantResults::answer()`. That class builds an ordinary `SearchQuery`
+and owns the response shape, so the route holds no search logic. Its markup is
+PHP templates rendered once per page — on a full boot, where the theme can
+override them — into `<template>` elements the script fills; see
 [search-modal.md](search-modal.md).
 
 ```
 theme search field / button
-  -> assets/src/search-modal.js       <dialog>, debounce, abort, cache, fallback
-  -> instant.php?mode=results         or GET /solrengine/v1/instant
-  -> Rest\InstantEndpoint             | Rest\InstantResultsController
-       reads q, post_type; RateLimiter under the shared 'instant' bucket
+  -> assets/src/search-modal.js       <dialog>, debounce, abort, cache
+  -> Rest\InstantResultsController    reads q, post_type, page; RateLimiter
   -> Search\InstantResults            post_type facet + tagged post_type filter
   -> Search\SearchService             cache, circuit breaker, hooks
   -> SearchBackend::search -> QueryTranslator -> ... as for a results page
 ```
 
-A third override exists in that process, for the popup: `rest.rate_limiter.viewer`
-becomes `AnonymousViewer`, because the cookie `CookieViewer` notices is not
-validated and a rate-limit exemption must not be for sale for the price of a
-forged cookie.
+Both routes pay for `rest_api_init`, where every active plugin registers its
+routes, before their callback runs. Development builds answered both from
+`instant.php` on a `SHORTINIT` boot to avoid that; it was removed for the first
+WordPress.org release (see [security.md](security.md#entry-points)). The seams
+it used are still here, because they keep any future lighter surface on the same
+code rather than a copy:
 
-`Backend\Solr\Sender` exists for the same reason. Putting bytes on the wire is
-the only part of talking to Solr that differs by environment, so it is the only
-part with two implementations — `WpHttpSender` through the WordPress HTTP API,
-which is the default wherever it exists, and `CurlSender` where there is no HTTP
-API to call. Everything that decides what to send and what a reply means lives in
-`HttpTransport`, once.
+- `Bootstrap::services()` registers every factory without attaching hooks, and
+  lets a reduced environment override the few whose definition assumes a full
+  boot (`viewer`, `rest.rate_limiter.viewer`, `woocommerce.active`).
+- `Backend\Solr\Sender` isolates putting bytes on the wire. `WpHttpSender`,
+  through the WordPress HTTP API, is the only production implementation.
+  Everything that decides what to send and what a reply means lives in
+  `HttpTransport`, once.
+- `SuggestPayload` and `InstantResults` own their response shapes, so a second
+  surface could return them unchanged.
 
 ## Three decisions visible in the code
 
@@ -233,10 +219,8 @@ model works unchanged under either multisite topology.
 
 **Construction is lazy.** Registering a service builds nothing. A request that
 never searches and never saves a post pays for `Bootstrap` and nothing else.
-`ContainerTest::test_registering_does_not_construct()` guards this. It is also
-what lets `instant.php` share the composition root instead of assembling its own:
-registering every factory and resolving one of them is measured in tenths of a
-millisecond.
+`ContainerTest::test_registering_does_not_construct()` guards this: registering
+every factory and resolving one of them is measured in tenths of a millisecond.
 
 ## Extension points
 

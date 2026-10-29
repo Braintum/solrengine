@@ -1,16 +1,15 @@
 <?php
 /**
- * Verify that every shipped PHP file refuses direct access, bar one.
+ * Verify that every shipped PHP file refuses direct access.
  *
- * Plugin Check enforces this, and the workflow suppresses it — because
- * instant.php is requested directly by design and the check has no per-file
- * exemption for that. Suppressing it there switches the check off for the whole
- * package, which is blunter than the problem: a file added later with no guard
- * would ship unnoticed.
+ * Plugin Check enforces the same rule in CI, but only against a built package
+ * on a WordPress install. This answers the same question in a second, locally,
+ * as part of `composer check`, so a missing guard is caught before a push.
  *
- * So this narrows it back. Every PHP file that ships must either guard against
- * direct access or contain nothing that runs when loaded, and the one deliberate
- * exception is named below rather than implied.
+ * Every PHP file that ships must either guard against direct access or contain
+ * nothing that runs when loaded. There are no exceptions: a file meant to be
+ * requested directly over HTTP has to load WordPress itself, which the
+ * WordPress.org review does not accept.
  *
  * Usage: php bin/check-direct-access.php
  *
@@ -20,13 +19,6 @@
 declare( strict_types=1 );
 
 $root = dirname( __DIR__ );
-
-/*
- * The one file that is meant to answer an HTTP request. A guard here would exit
- * before reaching the line that loads WordPress and defines ABSPATH. What it
- * relies on instead is in docs/security.md.
- */
-$allowed_direct_access = array( 'instant.php' );
 
 /*
  * Third-party code. It ships, but its guards are not this project's to enforce,
@@ -198,10 +190,6 @@ foreach ( $files as $file ) {
 
 	++$checked;
 
-	if ( in_array( $relative, $allowed_direct_access, true ) ) {
-		continue;
-	}
-
 	$source = (string) file_get_contents( (string) $file->getPathname() );
 
 	if ( solrengine_has_guard( $source ) || solrengine_is_declaration_only( $source ) ) {
@@ -221,18 +209,11 @@ if ( array() !== $problems ) {
 	fwrite(
 		STDERR,
 		"\nAdd: if ( ! defined( 'ABSPATH' ) ) { exit; }\n"
-			. "If the file is genuinely meant to answer an HTTP request, add it to\n"
-			. "\$allowed_direct_access in this script and say why in docs/security.md.\n"
+			. "A file meant to answer an HTTP request directly is not an option: see AGENTS.md.\n"
 	);
 
 	exit( 1 );
 }
 
-printf(
-	"Direct access: %d shipped PHP files checked, %d deliberate exception%s (%s).\n",
-	$checked,
-	count( $allowed_direct_access ),
-	1 === count( $allowed_direct_access ) ? '' : 's',
-	implode( ', ', $allowed_direct_access )
-);
+printf( "Direct access: %d shipped PHP files checked, no exceptions.\n", $checked );
 exit( 0 );

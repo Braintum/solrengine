@@ -159,10 +159,8 @@ next free block when adding a suite.
 solrengine.php      Plugin entry point. Must parse on old PHP: it is what tells
                     a user their PHP is too old, so no modern syntax belongs in
                     it.
-instant.php         Second entry point, reached directly over HTTP. Answers
-                    autocomplete on a SHORTINIT boot. Same rule about old PHP.
-constants.php       Version, paths, schema contract version. Included by both
-                    entry points and needs no WordPress, so neither has to
+constants.php       Version, paths, schema contract version. Needs no
+                    WordPress, so any entry point can include it rather than
                     define them twice.
 templates/          Front-end templates. A theme overrides one by copying it to
                     yourtheme/solrengine/. Their data-solrengine-* attributes

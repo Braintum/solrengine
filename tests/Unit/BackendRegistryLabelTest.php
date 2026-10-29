@@ -3,9 +3,9 @@
  * Backend label resolution tests.
  *
  * Labels are deferred because registering a backend happens on every request
- * while the label is read only by the admin screens and the CLI — and the
- * SHORTINIT process behind instant-search has no `__()` to call. That makes
- * "registering does not resolve the label" a property worth pinning.
+ * while the label is read only by the admin screens and the CLI — and `__()`
+ * must not run before `init`. That makes "registering does not resolve the
+ * label" a property worth pinning.
  *
  * @package SolrEngine
  */

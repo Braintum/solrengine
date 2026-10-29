@@ -2,16 +2,15 @@
 /**
  * Constants shared by every entry point.
  *
- * Two files start SolrEngine: `solrengine.php`, which WordPress loads as a
- * plugin, and `instant.php`, which answers autocomplete on a `SHORTINIT` boot
- * where the plugin is never loaded as a plugin. Both need the version, the paths
- * and the schema contract version, and defining them twice is how a User-Agent
- * or a cache key ends up reporting a release the code is not.
+ * `solrengine.php` is the only entry point today. The version, the paths and
+ * the schema contract version live here rather than beside the plugin header
+ * so that anything else that ever has to start SolrEngine reads the same
+ * values: defining them twice is how a User-Agent or a cache key ends up
+ * reporting a release the code is not.
  *
- * Nothing here touches WordPress, so it costs nothing to include in either
- * process. `SOLRENGINE_PLUGIN_URL` is deliberately absent: it needs
- * `plugins_url()`, and the process that would have to load it is the one that
- * never renders a URL.
+ * Nothing here touches WordPress, so it costs nothing to include.
+ * `SOLRENGINE_PLUGIN_URL` is deliberately absent: it needs `plugin_dir_url()`,
+ * and solrengine.php defines it.
  *
  * Must parse on old PHP, for the same reason `solrengine.php` must: a syntax
  * error here is a white screen, not a notice.
@@ -19,8 +18,7 @@
  * @package SolrEngine
  */
 
-// Both includers load WordPress before reaching this file: solrengine.php is a
-// plugin, and instant.php requires wp-load.php first.
+// Included by solrengine.php, which WordPress has already loaded.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }

@@ -55,10 +55,9 @@ final class RateLimiter {
 	/**
 	 * Whether the request belongs to a signed-in user.
 	 *
-	 * Asked through the contract rather than `is_user_logged_in()`, because the
-	 * search popup's fast path is limited too and runs in a SHORTINIT process
-	 * with no user stack to ask. The same seam {@see \SolrEngine\Search\SearchService}
-	 * uses, for the same reason.
+	 * Asked through the contract rather than `is_user_logged_in()`, so the
+	 * limiter unit-tests without WordPress. The same seam
+	 * {@see \SolrEngine\Search\SearchService} uses.
 	 *
 	 * @var Viewer
 	 */

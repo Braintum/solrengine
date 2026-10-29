@@ -12,11 +12,10 @@ use SolrEngine\Contracts\Suggestions;
 /**
  * The wire format of an autocomplete response.
  *
- * Shared by {@see \SolrEngine\Rest\SearchController::handle_suggest()} and
- * {@see \SolrEngine\Rest\InstantEndpoint}, which answer the same front end over
- * two different bootstraps. `instant-search.js` must not be able to tell which
- * one replied, so the shape lives in one place rather than being written twice
- * and compared by hand.
+ * Rendered by {@see \SolrEngine\Rest\SearchController::handle_suggest()}. Its
+ * own class so that the shape `instant-search.js` reads lives in one place, and
+ * any future surface answering autocomplete renders it here rather than writing
+ * a second copy to compare by hand.
  *
  * Pure: contracts in, arrays out.
  *

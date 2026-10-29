@@ -103,6 +103,9 @@ final class Container {
 		// here made the container, the most foundational class in the plugin,
 		// depend on WordPress being loaded before it could report a typo in a
 		// service name. See the ExceptionNotEscaped note in phpcs.xml.dist.
+		// Plugin Check does not read that file, so the exemption is repeated
+		// here, scoped to these two messages rather than to the whole package.
+		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Internal developer diagnostic, never rendered; the container must not need WordPress loaded.
 		if ( ! isset( $this->factories[ $id ] ) ) {
 			throw new RuntimeException(
 				sprintf( 'SolrEngine: no service registered for "%s".', $id )
@@ -114,6 +117,7 @@ final class Container {
 				sprintf( 'SolrEngine: circular dependency while resolving "%s".', $id )
 			);
 		}
+		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 		$this->resolving[ $id ] = true;
 

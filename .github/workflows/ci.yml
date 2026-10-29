@@ -33,15 +33,15 @@ jobs:
       - name: Versions agree across header, constant and readme
         run: php bin/check-version.php
 
+      # The same rule Plugin Check enforces, answered in a second here so a
+      # missing guard fails before the slower matrix starts.
+      - name: Shipped files refuse direct access
+        run: php bin/check-direct-access.php
+
       # Generated from the docblocks above each hook, so it cannot drift from
       # them. This step also fails when a hook has no docblock, no @since, or
       # documents a different number of parameters than it passes — hooks are
       # public API from 1.0, and an undocumented one has no contract.
-      # The narrow version of the direct-access check the Plugin Check job has to
-      # suppress. See the comment on ignore-codes in that job.
-      - name: Shipped files refuse direct access
-        run: php bin/check-direct-access.php
-
       - name: Hook reference is current and hooks are documented
         run: php bin/generate-hooks.php --check
 
@@ -224,8 +224,19 @@ jobs:
         run: vendor/bin/phpunit --testsuite backend
 
   # Directory compliance. Blocking, per plan Appendix A item A17: WordPress.org
-  # now runs automated security analysis on every release, so a finding here
-  # stops a release rather than merely embarrassing us.
+  # runs the same scanner on every submission and automated security analysis
+  # on every release, so a finding here stops a release rather than merely
+  # embarrassing us.
+  #
+  # Runs against the built package, never the repository, because the package
+  # is what the reviewers scan: .distignore decides what ships, and a file that
+  # only exists in git is not their concern.
+  #
+  # No ignore-codes. The two codes this job used to suppress are gone at the
+  # source: instant.php (missing_direct_file_access_protection) was removed for
+  # the first release, and Support/Container.php scopes its ExceptionNotEscaped
+  # exemption to its own two throws with a justified phpcs:disable. A blanket
+  # suppression here would also hide every future finding with the same code.
   plugin-check:
     name: Plugin Check
     runs-on: ubuntu-latest
@@ -251,42 +262,47 @@ jobs:
           npm run build
           bash bin/build-release.sh
 
+      # Fails the job on any ERROR. Warnings are reported as annotations but do
+      # not fail: the eight that remain (FilterRegistry exclude sizes,
+      # RunHistory table identifiers) are publishing task P03, which needs a
+      # written disposition for each rather than a blanket gate. Set
+      # `strict: true` once P03 is closed.
       - uses: wordpress/plugin-check-action@v1
+        id: plugin-check
         with:
           build-dir: ./build/solrengine
-          # Two suppressions. Recorded rather than hidden: WordPress.org's own
-          # review runs both checks unsuppressed, and these are the answers if
-          # they ask.
-          #
-          # ExceptionNotEscaped — the same position phpcs.xml.dist already takes
-          # for this sniff: an exception message is logged, not rendered, and
-          # escaping it mangles the message for whoever has to read it.
-          #
-          # The concrete case is Support/Container.php, which reports an unknown
-          # or circular service id. That class loads no WordPress at all — the
-          # unit suite fails if it ever needs to — so escaping there would make
-          # the container depend on WordPress being loaded before it could
-          # report a typo in a service name. Verified by trying it: two unit
-          # tests went red immediately.
-          #
-          # missing_direct_file_access_protection — instant.php is requested
-          # directly over HTTP by design. It is the autocomplete endpoint, and it
-          # loads WordPress itself with SHORTINIT because dispatching through
-          # rest_api_init costs ~830ms of other plugins booting before the
-          # callback runs. An `if ( ! defined( 'ABSPATH' ) ) exit;` there would
-          # exit before the line that defines ABSPATH.
-          #
-          # The check has no per-file exemption for this — read
-          # Direct_File_Access_Check::is_valid_for_direct_access(), which only
-          # excuses files containing no procedural code — so the suppression is
-          # repository-wide, which is blunter than the problem. bin/check-direct-
-          # access.php restores the narrow version: it fails when any shipped PHP
-          # file other than instant.php lacks a guard, so this suppression cannot
-          # quietly cover a second file later.
-          #
-          # What instant.php relies on instead of a guard is in docs/security.md:
-          # it is read-only, resolves the site from WordPress rather than from a
-          # parameter, finds wp-load.php by walking up from __FILE__ rather than
-          # from any request value, and applies the same site scope and
-          # visibility filter as every other read of the index.
-          ignore-codes: WordPress.Security.EscapeOutput.ExceptionNotEscaped,missing_direct_file_access_protection
+          slug: solrengine
+
+      # The action's own gate is its exit status, and the audit found the
+      # Plugin Check CLI exiting 0 while reporting errors. So the uploaded
+      # results are read again here: an ERROR in them fails the job whatever
+      # the step above returned, and the counts land in the run summary.
+      - name: Gate on the reported findings
+        if: always()
+        env:
+          RESULTS: ${{ runner.temp }}/plugin-check-results.txt
+        run: |
+          # Missing means the scan never ran. Empty is a clean scan.
+          if [ ! -f "$RESULTS" ]; then
+            echo "::error::Plugin Check produced no results file."
+            exit 1
+          fi
+
+          php -r '
+            $errors = 0; $warnings = 0; $rows = array();
+            foreach ( file( getenv( "RESULTS" ), FILE_IGNORE_NEW_LINES ) as $line ) {
+              if ( 0 === strpos( $line, "FILE: " ) ) { $file = substr( $line, 6 ); continue; }
+              $items = json_decode( $line, true );
+              if ( ! is_array( $items ) ) { continue; }
+              foreach ( $items as $item ) {
+                if ( ! is_array( $item ) || ! isset( $item["type"] ) ) { continue; }
+                "ERROR" === $item["type"] ? $errors++ : $warnings++;
+                $rows[] = sprintf( "| %s | %s:%d | `%s` |", $item["type"], $file, $item["line"] ?? 0, $item["code"] ?? "" );
+              }
+            }
+            $summary = "## Plugin Check\n\n**{$errors} errors, {$warnings} warnings**\n\n";
+            if ( $rows ) { $summary .= "| Type | Location | Code |\n| --- | --- | --- |\n" . implode( "\n", $rows ) . "\n"; }
+            file_put_contents( getenv( "GITHUB_STEP_SUMMARY" ), $summary, FILE_APPEND );
+            echo "Plugin Check: {$errors} errors, {$warnings} warnings\n";
+            exit( $errors > 0 ? 1 : 0 );
+          '

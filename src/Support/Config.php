@@ -146,9 +146,6 @@ final class Config {
 				// the theme's own field.
 				'search.instant_mode'           => 'modal',
 				'search.instant_limit'          => 8,
-				// Autocomplete answers through instant.php rather than the REST
-				// route. Same JSON, without rest_api_init's bootstrap.
-				'search.instant_fast_path'      => true,
 				// Autocomplete gives up early on purpose. A suggestion that
 				// lands after two more keystrokes is not a suggestion.
 				'search.instant_timeout_ms'     => 1500,

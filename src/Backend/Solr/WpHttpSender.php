@@ -23,8 +23,9 @@ final class WpHttpSender implements Sender {
 	/**
 	 * Whether this sender can run in the current process.
 	 *
-	 * False during a `SHORTINIT` boot, which loads neither the HTTP API nor the
-	 * filters that are its reason for being preferred.
+	 * False in a process that has not loaded the HTTP API, such as a
+	 * `SHORTINIT` boot. Requests then fail with a stable code rather than a
+	 * fatal error.
 	 *
 	 * @since 0.10.2
 	 *

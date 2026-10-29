@@ -13,7 +13,7 @@ it arrived in. Each one is public API from 1.0.
       php bin/generate-hooks.php
 -->
 
-27 hooks: 8 actions and 19 filters.
+26 hooks: 8 actions and 18 filters.
 
 - [Startup](#startup)
 - [What gets indexed](#what-gets-indexed)
@@ -27,7 +27,7 @@ it arrived in. Each one is public API from 1.0.
 
 ### `solrengine_allowed_ports`
 
-Filter · since 0.1.0 · `src/Bootstrap.php:390`
+Filter · since 0.1.0 · `src/Bootstrap.php:388`
 
 Ports SolrEngine will connect to.
 
@@ -237,22 +237,9 @@ Filters suggestions before they are returned.
 
 ## Integration with WordPress
 
-### `solrengine_instant_fast_path`
-
-Filter · since 0.10.2 · `src/Integration/WordPress/InstantSearch.php:107`
-
-Filters whether autocomplete and the search popup use the fast path.
-
-Returning false sends both through their REST routes instead, where
-`rest_api_init` has run and every search filter fires.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `$enabled` | `bool` | Whether to use the fast path. |
-
 ### `solrengine_instant_search_selector`
 
-Filter · since 0.5.0 · `src/Integration/WordPress/InstantSearch.php:141`
+Filter · since 0.5.0 · `src/Integration/WordPress/InstantSearch.php:81`
 
 Filters which inputs get instant search.
 
@@ -283,7 +270,7 @@ Change the heading, tagline or placeholder, or opt in to the
 
 ### `solrengine_search_modal_triggers`
 
-Filter · since 0.11.0 · `src/Integration/WordPress/SearchModal.php:366`
+Filter · since 0.11.0 · `src/Integration/WordPress/SearchModal.php:361`
 
 Filters which elements open the search popup when clicked.
 
@@ -381,7 +368,7 @@ about. Return an object implementing the LanguageProvider contract.
 
 ### `solrengine_rate_limit_request`
 
-Filter · since 0.4.0 · `src/Rest/RateLimiter.php:111`
+Filter · since 0.4.0 · `src/Rest/RateLimiter.php:110`
 
 Filters whether a request is subject to rate limiting.
 

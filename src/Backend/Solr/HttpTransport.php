@@ -17,10 +17,9 @@ use SolrEngine\Support\Credentials;
  * This is the single place that decides what a Solr request looks like and what
  * a reply means. Putting the bytes on the wire is delegated to a {@see Sender},
  * which is the only part that varies by environment: {@see WpHttpSender} uses
- * the WordPress HTTP API and is the default, {@see CurlSender} is used where
- * there is no HTTP API to call, as during the `SHORTINIT` boot behind
- * instant-search. Senders hold no policy, so there is no second copy of any of
- * the rules below to keep in step.
+ * the WordPress HTTP API and is the default, and tests inject their own.
+ * Senders hold no policy, so there is no second copy of any of the rules below
+ * to keep in step.
  *
  * Deliberately small. SolrEngine uses a narrow slice of Solr's HTTP surface —
  * update, select, schema, ping, system info — all JSON in and JSON out, which
@@ -129,7 +128,7 @@ final class HttpTransport {
 	 * @return Sender
 	 */
 	private static function default_sender(): Sender {
-		return WpHttpSender::is_available() ? new WpHttpSender() : new CurlSender();
+		return new WpHttpSender();
 	}
 
 	/**
@@ -373,8 +372,8 @@ final class HttpTransport {
 	 * The User-Agent Solr sees.
 	 *
 	 * Identifies the site so an administrator reading Solr's access log can tell
-	 * which one is querying. `home_url()` is unavailable during a `SHORTINIT`
-	 * boot, where the stored option gives the same answer.
+	 * which one is querying. Falls back to the stored option when `home_url()`
+	 * is not loaded, which gives the same answer.
 	 *
 	 * @return string
 	 */

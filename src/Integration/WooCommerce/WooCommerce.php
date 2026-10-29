@@ -37,34 +37,6 @@ final class WooCommerce {
 	}
 
 	/**
-	 * Whether WooCommerce is switched on for this site, from its options alone.
-	 *
-	 * For a process that loads no plugins — the instant-search fast path — and
-	 * so cannot ask {@see self::is_active()}. It answers a narrower question:
-	 * the plugin is activated, not that it is loaded and working. That is
-	 * enough to know the index holds product fields worth searching.
-	 *
-	 * @since 0.11.0
-	 *
-	 * @return bool
-	 */
-	public static function is_switched_on(): bool {
-		$plugins = (array) get_option( 'active_plugins', array() );
-
-		if ( is_multisite() ) {
-			$plugins = array_merge( $plugins, array_keys( (array) get_site_option( 'active_sitewide_plugins', array() ) ) );
-		}
-
-		foreach ( $plugins as $plugin ) {
-			if ( is_string( $plugin ) && 'woocommerce.php' === basename( $plugin ) ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
 	 * Attach everything that depends on WooCommerce.
 	 *
 	 * @since 0.7.0

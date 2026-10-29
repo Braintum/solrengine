@@ -128,18 +128,10 @@ The limit is deliberately lower than `/search`: a list longer than a screenful i
 not a list anybody reads, and every row costs latency on a request that fires while
 someone is still typing.
 
-**This is not the address the search field calls.** Autocomplete is answered by
-`instant.php`, outside the REST API, because a REST request is dispatched through
-`rest_api_init` — where every active plugin registers its routes — and that cost
-is paid before any callback runs. Both return the same JSON from the same service;
-the difference is how much of WordPress is loaded around it. See
-[search.md](search.md) for the measurements, what the fast path gives up, and how
-to turn it off.
-
-This route remains the documented, hookable one, and is unchanged: it runs on a
-full boot, so `solrengine_suggest_query` and `solrengine_suggestions` fire and
-`post_type` narrowing works. It is also the route to use from anything that is not
-this plugin's own search field.
+This is the address the theme's search field calls for the suggestion list. It
+runs on a full boot, so `solrengine_suggest_query` and `solrengine_suggestions`
+fire and `post_type` narrowing works. See [search.md](search.md#where-the-time-goes)
+for where its latency goes.
 
 ## `GET /instant`
 
@@ -186,10 +178,8 @@ With `post_type` set, `sections` is empty and `results` holds the page asked for
 `price` appears only on documents that carry one; what each of its keys means is
 in [search-modal.md](search-modal.md#response).
 
-Deliberately narrower than `/search`. The popup's fast path answers the same
-question with the same body — `instant.php?mode=results` — and a parameter it
-could not honour identically would make the two disagree. Rate limited under its
-own bucket, `instant`, which the fast path shares.
+Deliberately narrower than `/search`: the popup has no use for sorting or
+arbitrary filters. Rate limited under its own bucket, `instant`.
 
 ## `GET /status`
 
@@ -228,8 +218,7 @@ error.
 
 Off unless a persistent object cache is present, and the dashboard says so rather
 than implying protection that is not there. Limits are per IP address per window,
-configurable, and applied to the four public endpoints. The popup's fast path
-shares the `instant` bucket with its REST twin.
+configurable, and applied to the four public endpoints.
 
 Behind a CDN or reverse proxy, limit there instead. This is a backstop, not a
 perimeter.

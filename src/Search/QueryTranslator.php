@@ -507,8 +507,8 @@ final class QueryTranslator {
 	 * readable, and returning everything would expose indexed meta that an
 	 * administrator never meant to publish.
 	 *
-	 * The product prices are on it because the search popup shows them and the
-	 * popup's fast path has no WooCommerce to ask. They are what the product
+	 * The product prices are on it because the search popup shows them, read
+	 * from the index rather than from WooCommerce. They are what the product
 	 * page already publishes, and a document that is not a product simply has
 	 * none of them, so asking costs nothing on a site that sells nothing.
 	 *

@@ -181,29 +181,13 @@ matters for your store, remove the price from your copy of
 
 No, not unless you turn it on with the `solrengine_search_modal_args` filter.
 
-= Why does autocomplete request a file instead of the REST API? =
+= Autocomplete feels slow. What should I check? =
 
-The suggestion list and the search popup both do this, for the same reason:
-the REST API is too slow for something that fires on every keystroke.
-A WordPress REST request loads every active plugin before your search plugin is
-reached. On a WooCommerce site that measured around 830ms of other plugins
-booting for 67ms of actual searching.
-
-So autocomplete is answered by instant.php in the plugin folder, which loads
-WordPress in a reduced mode: the database and your settings, no plugins and no
-theme. It runs the same search code and returns the same data, typically in a
-few tens of milliseconds instead of most of a second.
-
-It is a read-only endpoint. It returns the same public titles the search results
-page would, applies the same privacy rules, and writes nothing. If your host
-blocks it, the search popup notices and uses the REST API instead. If you would
-rather both always went through the REST API, one filter switches them back:
-
-`add_filter( 'solrengine_instant_fast_path', '__return_false' );`
-
-= Autocomplete still feels slow. What should I check? =
-
-Two things outside this plugin matter more than anything inside it.
+Autocomplete and the search popup answer through the WordPress REST API, and a
+REST request loads every active plugin before the search is reached. On a
+WooCommerce site that measured around 830ms of other plugins booting for 67ms of
+actual searching. Two things outside this plugin matter more than anything
+inside it.
 
 **PHP OPcache should be enabled.** Without it PHP recompiles every file on every
 request. On a WooCommerce site that is over 20MB of code per request and can add
@@ -292,18 +276,17 @@ the same list.
 * The popup's markup is three templates a theme can override by copying them
   into a `solrengine` folder, and its colours and sizes are CSS custom
   properties.
-* New REST route `/solrengine/v1/instant`, also answered by the fast path, which
-  now falls back to REST on its own when a host blocks it.
+* New REST route `/solrengine/v1/instant`, which answers the popup.
 * The popup's results are ordinary links that Tab reaches, named by their
   titles, with arrow keys between them; no more nested listbox options.
 * Search matches the word being typed as a prefix: "hoo" finds "Hoodie", in the
   popup, on the results page, in the filter counts and in product search alike.
-* Fix: the instant-search fast path now searches product SKUs and attribute
-  values on a WooCommerce site, as the REST route always did.
 * New hooks: `solrengine_template`, `solrengine_search_modal_args`,
   `solrengine_search_modal_triggers` and `solrengine_search_modal_width`.
-* The fast path is now rate limited when answering the popup, under the same
-  limit as the REST route.
+* Autocomplete and the popup answer only through the REST API. The
+  `instant.php` fast path from development builds, and its
+  `solrengine_instant_fast_path` filter, are removed for the first WordPress.org
+  release.
 
 = 0.10.1 =
 * Documentation. Full references for the REST API, the command line, every hook,

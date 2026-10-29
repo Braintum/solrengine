@@ -8,9 +8,9 @@
  * common reasons a WordPress.org release ships the wrong code. Enforced in CI
  * rather than by discipline.
  *
- * The constant lives in constants.php rather than beside the header because
- * instant.php needs it too, and a second define() is exactly the kind of drift
- * this script exists to catch.
+ * The constant lives in constants.php rather than beside the header so that any
+ * other entry point reads the same value, and a second define() is exactly the
+ * kind of drift this script exists to catch.
  *
  * Usage: php bin/check-version.php
  *

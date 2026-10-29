@@ -87,9 +87,8 @@ final class BackendRegistry {
 	 *                                        translation: backends are registered
 	 *                                        on every request, the label is read
 	 *                                        only by the admin screens and the
-	 *                                        CLI, and `__()` is unavailable in the
-	 *                                        SHORTINIT process behind
-	 *                                        instant-search.
+	 *                                        CLI, and `__()` must not run before
+	 *                                        `init`.
 	 * @param callable        $search_factory Returns a SearchBackend.
 	 * @param callable        $index_factory  Returns an IndexBackend.
 	 * @return void

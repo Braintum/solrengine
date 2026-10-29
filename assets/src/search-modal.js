@@ -168,12 +168,6 @@ function attach( dialog ) {
 		numberFormat = new window.Intl.NumberFormat();
 	}
 
-	// The fast path first. If it ever answers with something that is not this
-	// plugin's JSON — a host refusing direct PHP in wp-content, a security
-	// plugin's block page — the REST route takes over for the rest of the page.
-	let endpoint = SETTINGS.endpoints.fast || SETTINGS.endpoints.rest;
-	let usingFast = !! SETTINGS.endpoints.fast;
-
 	let text = '';
 	let tab = '';
 	let items = [];
@@ -1049,7 +1043,7 @@ function attach( dialog ) {
 	}
 
 	/**
-	 * Fetch one page, falling back from the fast path to REST once.
+	 * Fetch one page.
 	 *
 	 * @param {string}      value  Text.
 	 * @param {string}      type   Tab.
@@ -1064,25 +1058,13 @@ function attach( dialog ) {
 			return { ok: true, status: 200, body: cache.get( key ) };
 		}
 
-		let { response, body } = await get(
-			endpoint,
+		const { response, body } = await get(
+			SETTINGS.endpoint,
 			value,
 			type,
 			number,
 			signal,
 		);
-
-		if ( usingFast && ! ours( response, body ) ) {
-			usingFast = false;
-			endpoint = SETTINGS.endpoints.rest;
-			( { response, body } = await get(
-				endpoint,
-				value,
-				type,
-				number,
-				signal,
-			) );
-		}
 
 		if ( ! response.ok || ! ours( response, body ) ) {
 			return { ok: false, status: response.status, body: null };
@@ -1700,7 +1682,7 @@ function init() {
 	// which still searches.
 	if (
 		! dialog ||
-		! SETTINGS.endpoints ||
+		! SETTINGS.endpoint ||
 		typeof dialog.showModal !== 'function'
 	) {
 		return;

@@ -39,8 +39,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-// Version, paths and the schema contract version, shared with instant.php so
-// the two entry points cannot disagree about them.
+// Version, paths and the schema contract version, kept in their own file so
+// any other entry point reads the same values rather than redefining them.
 require_once __DIR__ . '/constants.php';
 
 define( 'SOLRENGINE_PLUGIN_URL', plugin_dir_url( __FILE__ ) );

@@ -270,7 +270,7 @@ final class SearchModalTest extends WP_UnitTestCase {
 
 		$response = rest_do_request( $request );
 
-		// Clamped, not refused: the fast path clamps it too.
+		// Clamped, not refused.
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 1, $response->get_data()['page'] );
 	}

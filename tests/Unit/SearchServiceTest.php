@@ -4,9 +4,7 @@
  *
  * The point of these is as much architectural as behavioural: this suite loads no
  * WordPress, so the file existing at all is the proof that the service no longer
- * reaches for `is_user_logged_in()`, `wp_cache_get()` or `get_option()`. That is
- * also what lets the instant-search entry point run the very same service in a
- * SHORTINIT process.
+ * reaches for `is_user_logged_in()`, `wp_cache_get()` or `get_option()`.
  *
  * @package SolrEngine
  */

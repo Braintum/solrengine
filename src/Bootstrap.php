@@ -211,19 +211,17 @@ final class Bootstrap {
 	 * The container, with every service factory registered and no hooks attached.
 	 *
 	 * `boot()` is the entry point for a WordPress request: it registers these
-	 * same factories and then attaches the plugin's hooks. Some entry points are
-	 * not a WordPress request and must not attach anything — instant-search
-	 * boots with `SHORTINIT` and answers one query — and they use this instead.
+	 * same factories and then attaches the plugin's hooks. A caller that must not
+	 * attach anything uses this instead.
 	 *
 	 * Registration is lazy throughout, so this constructs nothing: the caller
 	 * resolves the one or two services it needs and pays for those alone. That
-	 * is what lets instant-search share this composition rather than assemble a
+	 * is what lets any such caller share this composition rather than assemble a
 	 * parallel one, which is how the two would drift apart on a timeout, a TLS
 	 * setting, or a relevance default.
 	 *
 	 * Callers in a reduced environment may override a factory before resolving
-	 * anything, for the few services whose definition assumes a full boot. See
-	 * {@see \SolrEngine\Rest\InstantEndpoint::container()}.
+	 * anything, for the few services whose definition assumes a full boot.
 	 *
 	 * Safe to call more than once.
 	 *
@@ -550,7 +548,7 @@ final class Bootstrap {
 		);
 
 		// Its own service so that a process which loads no plugins can answer
-		// it another way: see InstantEndpoint::container().
+		// it another way.
 		$container->share(
 			'woocommerce.active',
 			static function (): bool {
@@ -697,7 +695,7 @@ final class Bootstrap {
 		// Who the rate limiter exempts. Its own service rather than 'viewer',
 		// because the two questions part company where a login cannot be
 		// verified: a cache may trust an unvalidated cookie, an exemption may
-		// not. See AnonymousViewer, which instant.php puts here.
+		// not.
 		$container->share(
 			'rest.rate_limiter.viewer',
 			static function ( Container $c ): Viewer {

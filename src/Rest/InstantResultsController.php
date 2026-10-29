@@ -16,22 +16,18 @@ use WP_REST_Server;
 /**
  * `GET /solrengine/v1/instant` — results and tab counts for the search popup.
  *
- * The documented, hookable twin of the `instant.php` fast path, and the one the
- * popup falls back to when the fast path is switched off, missing, or blocked by
- * the host. Both call {@see InstantResults} and return its body unchanged, so
- * the popup cannot tell which answered.
+ * Calls {@see InstantResults} and returns its body unchanged.
  *
  * Narrower than `/search` on purpose. It takes text, one content-type tab and
  * a page, nothing else: the popup has no use for sorting or arbitrary filters,
- * and a parameter the fast path could not honour identically would make the
- * two surfaces answer differently.
+ * and every parameter is one a lighter surface could honour identically.
  *
  * @since 0.11.0
  */
 final class InstantResultsController {
 
 	/**
-	 * Rate limiter bucket. Shared with the fast path.
+	 * Rate limiter bucket.
 	 *
 	 * @var string
 	 */
@@ -107,7 +103,7 @@ final class InstantResultsController {
 						'sanitize_callback' => 'sanitize_key',
 					),
 					// @since 0.11.0. A page of a type tab. InstantResults clamps
-					// it, on this surface and the fast path alike.
+					// it.
 					'page'      => array(
 						'type'              => 'integer',
 						'default'           => 1,
@@ -163,8 +159,8 @@ final class InstantResultsController {
 
 		$response = new WP_REST_Response( $result->value() );
 
-		// The same short private cache the fast path sends. Never shared: a
-		// proxy holding one would outlive an unpublish.
+		// A short private cache. Never shared: a proxy holding one would
+		// outlive an unpublish.
 		if ( ! is_user_logged_in() ) {
 			$response->header( 'Cache-Control', 'private, max-age=30' );
 		}

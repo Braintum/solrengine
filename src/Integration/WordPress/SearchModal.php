@@ -342,13 +342,8 @@ final class SearchModal {
 	 * @return array<string,mixed>
 	 */
 	private function settings(): array {
-		$fast = InstantSearch::fast_path_url( $this->config );
-
 		return array(
-			'endpoints' => array(
-				'fast' => '' === $fast ? '' : add_query_arg( 'mode', 'results', $fast ),
-				'rest' => rest_url( 'solrengine/v1/instant' ),
-			),
+			'endpoint'  => rest_url( 'solrengine/v1/instant' ),
 			'minimum'   => SuggestQuery::MIN_LENGTH,
 			'fields'    => InstantSearch::selector(),
 			/**
@@ -405,8 +400,8 @@ final class SearchModal {
 	/**
 	 * The store's price format, or null on a site that sells nothing.
 	 *
-	 * Read from WooCommerce here, on a full boot, because the fast path that
-	 * answers the popup has no WooCommerce to ask.
+	 * Read from WooCommerce once, on the page load, so the popup's responses
+	 * carry indexed prices only and are formatted in the browser.
 	 *
 	 * @return array<string,mixed>|null
 	 */

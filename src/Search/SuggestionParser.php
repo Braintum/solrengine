@@ -14,12 +14,10 @@ use SolrEngine\Contracts\Suggestions;
 /**
  * Reads the documents a suggest query returned.
  *
- * Extracted so that the two endpoints answering autocomplete cannot drift.
- * {@see \SolrEngine\Backend\Solr\SolrBackend::suggest()} reaches Solr through
- * the WordPress HTTP API; {@see \SolrEngine\Rest\InstantEndpoint} reaches it
- * through cURL on a SHORTINIT boot. They are different transports on purpose,
- * and were briefly different parsers by accident — which is the kind of
- * duplication that stays correct until one side gains a field.
+ * Extracted from {@see \SolrEngine\Backend\Solr\SolrBackend::suggest()} so that
+ * anything answering autocomplete reads a reply the same way. There were
+ * briefly two parsers by accident — which is the kind of duplication that stays
+ * correct until one side gains a field.
  *
  * Pure: decoded JSON in, contracts out. No WordPress, no transport.
  *

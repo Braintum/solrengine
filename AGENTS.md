@@ -24,13 +24,14 @@ WordPress plugin that answers search from Apache Solr and falls back to WordPres
   wire-format rule is written in two files, one will keep an older, laxer copy — which
   is precisely how `build_query()` silently drops the site scope and the visibility
   filter while still returning results.
-- Surfaces differ in bootstrap, never in behaviour. A REST route, a fast path and a CLI
-  command answering the same question call one domain class that answers it
-  (`Suggester`). The surface holds only bootstrap, input reading and output.
-- A new web-reachable entry point is a design decision, not an optimisation. Outside
-  `solrengine.php` and `instant.php`, do not add one. Any that exists resolves its paths
-  from `__FILE__` and never from the request, and carries the same rate limiting, site
-  scope and visibility filtering as the route it shortcuts.
+- Surfaces differ in bootstrap, never in behaviour. A REST route and a CLI command
+  answering the same question call one domain class that answers it (`Suggester`). The
+  surface holds only bootstrap, input reading and output.
+- `solrengine.php` is the only entry point. Do not add a file that is requested directly
+  over HTTP or that loads `wp-load.php` itself: WordPress.org review rejects it, which is
+  why `instant.php` was removed before the first release (see
+  [docs/security.md](docs/security.md#entry-points)). Reach Solr only through the
+  WordPress HTTP API.
 - Measure before building. Profile where the time actually goes and report it before
   writing a faster path; most latency in a WordPress request is not in this plugin. A
   change that buys speed with duplication has to justify the duplication first.

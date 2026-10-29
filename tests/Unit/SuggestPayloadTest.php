@@ -2,9 +2,8 @@
 /**
  * Autocomplete wire-format tests.
  *
- * Two endpoints answer autocomplete on two different bootstraps, and the
- * browser must not be able to tell them apart. The shape is therefore pinned
- * here rather than compared by hand between them.
+ * The shape `instant-search.js` reads is pinned here, so that any surface
+ * answering autocomplete renders exactly this body.
  *
  * @package SolrEngine
  */
@@ -146,10 +145,10 @@ final class SuggestPayloadTest extends TestCase {
 		$this->assertSame( 0, $this->parse( array( 'response' => array( 'docs' => array() ) ) )->took_ms() );
 	}
 
-	// -- The two endpoints agree --------------------------------------------
+	// -- The round trip ------------------------------------------------------
 
 	public function test_parsing_then_rendering_produces_the_documented_body(): void {
-		// The whole round trip both endpoints perform, asserted as one value.
+		// The whole round trip the suggest route performs, asserted as one value.
 		$body = $this->render(
 			$this->parse(
 				array(

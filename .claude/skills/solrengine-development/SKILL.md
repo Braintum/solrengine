@@ -20,8 +20,10 @@ them.
    add a seam (an interface, a container override) instead.
 3. Decide which layer the change belongs to: WordPress surface → integration →
    domain → backend adapter. Domain code must unit-test with no WordPress loaded.
-4. A new web-reachable entry point needs the owner's say-so. Only
-   `solrengine.php` and `instant.php` exist; do not add another.
+4. `solrengine.php` is the only entry point. Do not add a file that is
+   requested directly over HTTP or loads `wp-load.php`; the directory rejects
+   it, which is why `instant.php` was removed. Bringing a lighter path back is
+   the owner's decision, after the first release is approved.
 
 ## WordPress.org requirements
 
@@ -93,8 +95,8 @@ plugin's copy, then the `solrengine_template` filter.
 - Card templates have exactly one root element, carrying `role="option"`.
 - Values are inserted as text and URLs are restricted to http(s) in
   `assets/src/search-modal.js`. Do not add a slot that inserts markup.
-- The fast path loads no theme, so templates are rendered once per page into
-  `<template>` elements. Anything per-result that a template cannot express
+- Templates are rendered once per page, with the theme loaded, into
+  `<template>` elements, and the JSON carries data, never markup. Anything per-result that a template cannot express
   belongs in the `solrengine:result` event, not in a new endpoint.
 
 ## Front-end assets

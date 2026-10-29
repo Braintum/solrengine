@@ -30,12 +30,10 @@ use SolrEngine\Integration\WooCommerce\ProductFields;
  *   {@see self::MAX_RESULTS} is served, which is far more than anyone scrolls
  *   and keeps a crafted request from asking Solr for a deep page.
  *
- * The one class both of the popup's surfaces call: the REST route
- * {@see \SolrEngine\Rest\InstantResultsController} and the `instant.php` fast
- * path {@see \SolrEngine\Rest\InstantEndpoint}. They differ in how much of
- * WordPress is loaded around this call and in nothing else, so the browser
- * cannot tell which one answered. That is also why the response shape lives
- * here rather than in either surface: a second copy of it is a copy that
+ * Called by the popup's REST route
+ * {@see \SolrEngine\Rest\InstantResultsController}. The response shape lives
+ * here rather than in the surface, so that any other surface answering the
+ * popup returns this body unchanged: a second copy of it is a copy that
  * drifts.
  *
  * It adds no search logic. The query is an ordinary {@see SearchQuery}, so the
@@ -515,7 +513,8 @@ final class InstantResults {
 	 * A product's indexed prices, shaped for display.
 	 *
 	 * These are base prices (see docs/woocommerce.md), and the popup formats
-	 * them in the browser because the fast path has no WooCommerce to ask. The
+	 * them in the browser, so the answer does not depend on WooCommerce being
+	 * loaded in the process that serves it. The
 	 * decisions about what a price *means* are made here, once, so that every
 	 * template reads the same answer:
 	 *

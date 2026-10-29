@@ -73,26 +73,21 @@ every page.
 
 ## Where results come from
 
-The same JSON from two addresses, as with autocomplete:
-
 ```
-GET /wp-content/plugins/solrengine/instant.php?mode=results&q=lamp&post_type=product&page=2   fast path
-GET /wp-json/solrengine/v1/instant?q=lamp&post_type=product&page=2                            REST route
+GET /wp-json/solrengine/v1/instant?q=lamp&post_type=product&page=2
 ```
 
-The popup uses the fast path when it is enabled and present, and the REST route
-otherwise. If the fast path ever answers with something that is not SolrEngine's
-JSON — a host that refuses direct PHP requests inside `wp-content`, a security
-plugin's block page — the popup switches to the REST route for the rest of the
-page view, without the visitor noticing.
+If the route ever answers with something that is not SolrEngine's JSON — a
+security plugin's block page, say — the popup shows its error state rather than
+trying to read it.
 
-Measured on the development site (WooCommerce active, OPcache warm, Solr local):
-about 90 ms through the fast path and about 900 ms through REST, almost all of
-the difference being other plugins booting during `rest_api_init`. See
-[search.md](search.md#where-the-time-goes) for why.
+Measured on the development site (WooCommerce active, OPcache warm, Solr local),
+a popup request takes about 900 ms, almost all of it other plugins booting during
+`rest_api_init`. See [search.md](search.md#where-the-time-goes) for why, and for
+the lighter path deferred until after the first WordPress.org release.
 
-Both are answered by one class, `Search\InstantResults`, and neither surface adds
-anything to it. The query is an ordinary `SearchQuery`, so the site scope, the
+The route is answered by one class, `Search\InstantResults`, and the route adds
+nothing to it. The query is an ordinary `SearchQuery`, so the site scope, the
 public-visibility filter and the relevance profile are exactly those of a results
 page. The counts are the registered `post_type` facet, and the selected tab is the
 registered `post_type` filter; because a facet's own filter is tagged and excluded
@@ -105,11 +100,8 @@ match as written. Whole words still rank as they would on the results page. See
 complete: one-letter words and words with punctuation. The results page completes
 the same way, so pressing Enter shows what the popup showed.
 
-**WooCommerce fields on both surfaces.** On a shop, SKUs and attribute values
-are searched as well as titles and content. The fast path loads no plugins, so it
-learns that WooCommerce is active from the site's active-plugin options rather
-than from WooCommerce itself; before 0.11.0 it did not search those fields at
-all, and could find fewer products than the REST route.
+**WooCommerce fields.** On a shop, SKUs and attribute values are searched as
+well as titles and content.
 
 **What All costs.** One query for the counts, which fetches no documents, then
 one small query per type with a match, for that type's first few cards. On a site
@@ -128,9 +120,9 @@ why.
 | `post_type` | string | One indexed post type, or empty for all. An unknown type reads as all |
 | `page` | integer | Since 0.11.0. A type tab's page, from 1. Ignored on All. Below 1 reads as 1; past the 1,000th result reads as the last page served |
 
-That is the whole surface. No sorting or arbitrary filters: the fast path could
-not honour them identically, and two surfaces that answer differently are a bug
-waiting for whichever one a visitor happens to reach.
+That is the whole surface. No sorting or arbitrary filters: the popup has no use
+for them, and every parameter is one a lighter surface could later honour
+identically.
 
 ### Response
 
@@ -228,10 +220,11 @@ path under `solrengine/`, and edit the copy. A child theme wins over its parent;
 both win over the plugin. The plugin ships `result-product.php`; any other type
 uses `result.php` unless the theme adds its own.
 
-**Why templates, if results are rendered in the browser?** The fast path loads no
-theme, so it cannot run a theme's PHP for each result. Instead every template is
-rendered once per page, on a normal page load with the theme active, into
-`<template>` elements; the script fills a copy for each result. Theme overrides
+**Why templates, if results are rendered in the browser?** So that the JSON
+carries data and never markup, and a theme's PHP runs where the theme is
+certainly loaded. Every template is rendered once per page, on a normal page load
+with the theme active, into `<template>` elements; the script fills a copy for
+each result. Theme overrides
 are therefore real PHP — conditionals, translation functions, theme helpers — run
 once per page rather than once per result.
 
@@ -330,7 +323,6 @@ the rest are in the document with `hidden` set.
 | `solrengine_search_modal_triggers` | Elements that open the popup when clicked |
 | `solrengine_search_modal_width` | The width the popup grows to, when the theme does not say or says something narrower than its layout |
 | `solrengine_instant_search_selector` | The theme's search fields (shared with the suggestion list) |
-| `solrengine_instant_fast_path` | Return false to answer through REST only (shared with the suggestion list) |
 
 ```php
 add_filter( 'solrengine_search_modal_args', function ( $args ) {
@@ -340,10 +332,9 @@ add_filter( 'solrengine_search_modal_args', function ( $args ) {
 } );
 ```
 
-Full signatures are in [hooks.md](hooks.md). Note that the fast path, like the
-suggestion list's, loads no plugins, so `solrengine_search_query` and
-`solrengine_search_results` do not fire there. A site that needs them during the
-popup turns the fast path off.
+Full signatures are in [hooks.md](hooks.md). `solrengine_search_query` and
+`solrengine_search_results` fire for the popup's queries as for any other
+search.
 
 ## Styling
 
@@ -395,8 +386,8 @@ rules for bare `button`, `input`, `a` and `mark` without `!important`. Below
 
 **The popup's prices are indexed base prices, formatted in the browser.** This is
 a deliberate exception to the rule in [woocommerce.md](woocommerce.md) that a
-displayed price is rendered by WooCommerce: the fast path has no WooCommerce to
-ask. The store's currency symbol, position, separators and decimals are read from
+displayed price is rendered by WooCommerce: it keeps the response free of markup
+and keeps one result shape whatever process serves it. The store's currency symbol, position, separators and decimals are read from
 WooCommerce when the page loads, so the format matches; where the shop displays
 prices including tax, the amount is scaled by the tax ratio recorded at index
 time.
@@ -444,4 +435,3 @@ removes the price element from its copy of `result-product.php`.
 | `search.instant_enabled` | `false` | Whether instant search is attached at all |
 | `search.instant_mode` | `modal` | `modal` for the popup, `suggest` for the suggestion list |
 | `search.instant_limit` | `8` | Suggestions in the suggestion list. The popup does not read it: it pages a type tab 24 at a time and shows one row per section on All |
-| `search.instant_fast_path` | `true` | Answer from `instant.php` rather than the REST route |
