@@ -260,8 +260,23 @@ final class ProductDocumentTest extends WP_UnitTestCase {
 	 * @return array<string,int>
 	 */
 	private function attribute_terms(): array {
-		if ( ! taxonomy_exists( 'pa_color' ) ) {
-			wc_create_attribute(
+		// Each test's transaction rolls the attribute's row back, while the
+		// registered taxonomy outlives it. wc_create_attribute() refuses a slug
+		// whose taxonomy is already registered, so from the second test on it
+		// failed, the attribute id stayed 0, and WooCommerce read the attribute
+		// as a custom, non-taxonomy one — failing the variable-product test for
+		// a reason that had nothing to do with variable products. So the row is
+		// what is checked, a leftover taxonomy is cleared first, and
+		// WooCommerce's cached attribute list is dropped before asking.
+		delete_transient( 'wc_attribute_taxonomies' );
+		\WC_Cache_Helper::invalidate_cache_group( 'woocommerce-attributes' );
+
+		if ( 0 === wc_attribute_taxonomy_id_by_name( 'color' ) ) {
+			if ( taxonomy_exists( 'pa_color' ) ) {
+				unregister_taxonomy( 'pa_color' );
+			}
+
+			$created = wc_create_attribute(
 				array(
 					'name' => 'Color',
 					'slug' => 'color',
@@ -269,6 +284,10 @@ final class ProductDocumentTest extends WP_UnitTestCase {
 				)
 			);
 
+			$this->assertIsInt( $created, 'The colour attribute could not be created.' );
+		}
+
+		if ( ! taxonomy_exists( 'pa_color' ) ) {
 			register_taxonomy( 'pa_color', array( 'product' ), array( 'hierarchical' => false ) );
 		}
 

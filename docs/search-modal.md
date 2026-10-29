@@ -118,7 +118,7 @@ why.
 | --- | --- | --- |
 | `q` | string | At most 200 characters. Fewer than 2 answers an empty body without asking Solr |
 | `post_type` | string | One indexed post type, or empty for all. An unknown type reads as all |
-| `page` | integer | Since 0.11.0. A type tab's page, from 1. Ignored on All. Below 1 reads as 1; past the 1,000th result reads as the last page served |
+| `page` | integer | Since 1.0.0. A type tab's page, from 1. Ignored on All. Below 1 reads as 1; past the 1,000th result reads as the last page served |
 
 That is the whole surface. No sorting or arbitrary filters: the popup has no use
 for them, and every parameter is one a lighter surface could later honour
@@ -272,7 +272,7 @@ describes it with whichever of type, price, date and author the card shows
 45,00 €" rather than every word in the card run together. Arrow keys move
 between cards by their links.
 
-Before 0.11.0 was released, cards were listbox options with `role="option"` on
+In development builds before 1.0.0, cards were listbox options with `role="option"` on
 the item and `tabindex="-1"` on the link. The script removes both from an older
 copy, so it keeps working; take them out of your copy anyway.
 

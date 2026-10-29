@@ -18,7 +18,7 @@ namespace SolrEngine\Support;
  * request must never pay for, and an administrator loading a screen is a request
  * where an extra query does not matter.
  *
- * @since 0.10.2
+ * @since 1.0.0
  */
 final class Upgrade {
 
@@ -34,7 +34,7 @@ final class Upgrade {
 	/**
 	 * Apply anything this version needs, once.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @return void
 	 */

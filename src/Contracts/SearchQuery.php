@@ -277,7 +277,7 @@ final class SearchQuery {
 	/**
 	 * Whether the last word is matched as a prefix, as text still being typed.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @return bool
 	 */
@@ -498,7 +498,7 @@ final class SearchQuery {
 	 * {@see \SolrEngine\Search\PrefixTerms}. A backend that already matches
 	 * partial words may ignore it.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @param bool $completion Whether to complete the last word.
 	 * @return self

@@ -25,7 +25,7 @@ namespace SolrEngine\Search;
  * the search popup ({@see QueryTranslator}, for a query that asks for
  * completion) both apply it.
  *
- * @since 0.11.0
+ * @since 1.0.0
  */
 final class PrefixTerms {
 
@@ -39,7 +39,7 @@ final class PrefixTerms {
 	/**
 	 * Whether a word may be completed with a wildcard.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @param string $word One word.
 	 * @return bool
@@ -51,7 +51,7 @@ final class PrefixTerms {
 	/**
 	 * The text with its last word completed, or unchanged when it cannot be.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @param string $text Cleaned text: trimmed, spaces collapsed.
 	 * @return string

@@ -22,14 +22,14 @@ namespace SolrEngine\Contracts;
  * Implementations must treat a miss as `null` rather than `false`, because a
  * cached value may legitimately be falsey.
  *
- * @since 0.10.2
+ * @since 1.0.0
  */
 interface Cache {
 
 	/**
 	 * Read a value.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @param string $key Cache key.
 	 * @return mixed The value, or null on a miss.
@@ -39,7 +39,7 @@ interface Cache {
 	/**
 	 * Store a value.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @param string $key   Cache key.
 	 * @param mixed  $value Value to store.

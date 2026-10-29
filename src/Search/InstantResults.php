@@ -46,7 +46,7 @@ use SolrEngine\Integration\WooCommerce\ProductFields;
  *
  * Pure: a service in, arrays out. Unit-tested with no WordPress loaded.
  *
- * @since 0.11.0
+ * @since 1.0.0
  */
 final class InstantResults {
 
@@ -163,7 +163,7 @@ final class InstantResults {
 	/**
 	 * Answer the popup.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @param string $text      What the visitor typed.
 	 * @param string $post_type Selected tab, or '' for all.
@@ -196,7 +196,7 @@ final class InstantResults {
 	 * the filter is tagged and so only the filter leaves the other tabs'
 	 * counts intact.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @param string   $text     Normalised text.
 	 * @param string   $tab      A valid tab, or ''.
@@ -232,7 +232,7 @@ final class InstantResults {
 	 * being indexed since the page loaded, and showing everything is a better
 	 * answer to that than an empty panel.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @param string $post_type Requested tab.
 	 * @return string
@@ -248,7 +248,7 @@ final class InstantResults {
 	 * promised, so a page past the limit is a crafted request, and the cheapest
 	 * honest answer to it is the last page there is.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @param int $page Requested page.
 	 * @return int

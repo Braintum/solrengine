@@ -24,7 +24,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'SOLRENGINE_VERSION' ) ) {
-	define( 'SOLRENGINE_VERSION', '0.10.1' );
+	define( 'SOLRENGINE_VERSION', '1.0.0' );
 }
 
 if ( ! defined( 'SOLRENGINE_PLUGIN_DIR' ) ) {

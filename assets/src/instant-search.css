@@ -14,9 +14,9 @@
 	position: relative;
 
 	--solrengine-bg: #fff;
-	--solrengine-border: rgba( 0, 0, 0, 0.15 );
-	--solrengine-active-bg: rgba( 0, 0, 0, 0.06 );
-	--solrengine-shadow: 0 2px 8px rgba( 0, 0, 0, 0.12 );
+	--solrengine-border: rgba(0, 0, 0, 0.15);
+	--solrengine-active-bg: rgba(0, 0, 0, 0.06);
+	--solrengine-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .solrengine-suggestions {
@@ -30,16 +30,17 @@
 	list-style: none;
 	max-height: 60vh;
 	overflow-y: auto;
-	background: var( --solrengine-bg );
-	border: 1px solid var( --solrengine-border );
+	background: var(--solrengine-bg);
+	border: 1px solid var(--solrengine-border);
 	border-radius: 3px;
-	box-shadow: var( --solrengine-shadow );
+	box-shadow: var(--solrengine-shadow);
 }
 
 .solrengine-suggestion {
 	margin: 0;
 	padding: 0.6em 0.8em;
 	cursor: pointer;
+
 	/* Long titles truncate rather than wrapping to three lines and pushing
 	   the rest of the list off screen. */
 	overflow: hidden;
@@ -49,12 +50,13 @@
 
 .solrengine-suggestion.is-active,
 .solrengine-suggestion:hover {
-	background: var( --solrengine-active-bg );
+	background: var(--solrengine-active-bg);
 }
 
 /* Keyboard highlighting must remain visible in forced-colours mode, where
    background colours are replaced by the user's own palette. */
 @media ( forced-colors: active ) {
+
 	.solrengine-suggestion.is-active {
 		outline: 2px solid Highlight;
 		outline-offset: -2px;
@@ -68,7 +70,7 @@
 	padding: 0;
 	margin: -1px;
 	overflow: hidden;
-	clip: rect( 0, 0, 0, 0 );
+	clip: rect(0, 0, 0, 0);
 	white-space: nowrap;
 	border: 0;
 }

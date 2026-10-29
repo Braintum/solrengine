@@ -44,6 +44,9 @@ function solrengine_uninstall_site() {
 		'solrengine_sync_run_rebuild',
 		'solrengine_rebuild',
 		'solrengine_reconciliation',
+		// The circuit breaker's failure count. Harmless on its own, but a
+		// reinstall would start with search paused if it had tripped.
+		'solrengine_breaker',
 	);
 
 	foreach ( $options as $option ) {
@@ -53,6 +56,7 @@ function solrengine_uninstall_site() {
 	// The discovered meta-key list is a transient rather than an option, and
 	// transients are stored as options with a prefix, so it needs naming twice.
 	delete_transient( 'solrengine_meta_keys' );
+	delete_transient( 'solrengine_wc_price_ceiling' );
 
 	// Legacy 0.1.0 prototype options.
 	delete_option( 'solrengine_settings' );
@@ -88,7 +92,20 @@ function solrengine_uninstall_site() {
 		$wpdb->query( 'DROP TABLE IF EXISTS `' . esc_sql( $table ) . '`' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery
 	}
 
-	wp_clear_scheduled_hook( 'solrengine_reconcile' );
+	if ( class_exists( '\SolrEngine\Support\Lifecycle' ) ) {
+		// Every WP-Cron hook and every Action Scheduler job in the plugin's
+		// group. Shared Action Scheduler tables are left alone.
+		\SolrEngine\Support\Lifecycle::cancel_queued_work();
+	} else {
+		wp_clear_scheduled_hook( 'solrengine_reconcile' );
+	}
+}
+
+// The class that knows which hooks the plugin schedules. Uninstall runs
+// without the plugin loaded, so the autoloader is brought in by hand, and
+// skipped on an install so broken that it is missing.
+if ( is_readable( __DIR__ . '/vendor/autoload.php' ) ) {
+	require_once __DIR__ . '/vendor/autoload.php';
 }
 
 if ( is_multisite() ) {

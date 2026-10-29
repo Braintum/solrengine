@@ -383,7 +383,7 @@ final class Config {
 	/**
 	 * The option groups that are read on every search and therefore autoloaded.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @return string[]
 	 */

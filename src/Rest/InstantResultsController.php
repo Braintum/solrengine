@@ -22,7 +22,7 @@ use WP_REST_Server;
  * a page, nothing else: the popup has no use for sorting or arbitrary filters,
  * and every parameter is one a lighter surface could honour identically.
  *
- * @since 0.11.0
+ * @since 1.0.0
  */
 final class InstantResultsController {
 
@@ -74,7 +74,7 @@ final class InstantResultsController {
 	/**
 	 * Register the route.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @return void
 	 */
@@ -102,7 +102,7 @@ final class InstantResultsController {
 						'default'           => '',
 						'sanitize_callback' => 'sanitize_key',
 					),
-					// @since 0.11.0. A page of a type tab. InstantResults clamps
+					// @since 1.0.0. A page of a type tab. InstantResults clamps
 					// it.
 					'page'      => array(
 						'type'              => 'integer',
@@ -117,7 +117,7 @@ final class InstantResultsController {
 	/**
 	 * Answer the popup.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error

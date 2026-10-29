@@ -443,7 +443,7 @@ function attach( dialog ) {
 		element.id = `${ baseId }-${ index }`;
 		element.dataset.solrengineIndex = String( index );
 
-		// A copy of the template from before 0.11.0 shipped: the card is a
+		// A copy of the template from a development build before 1.0.0: the card is a
 		// list item now, and its link is reached like any other.
 		if ( 'option' === element.getAttribute( 'role' ) ) {
 			element.removeAttribute( 'role' );

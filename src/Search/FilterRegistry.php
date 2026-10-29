@@ -31,7 +31,7 @@ final class FilterRegistry {
 	/**
 	 * Registered filters keyed by public key.
 	 *
-	 * @var array<string,array{field:string,type:string,label:string,gap:float,range:bool,exclude:bool}>
+	 * @var array<string,array{field:string,type:string,label:string,gap:float,range:bool,negate:bool}>
 	 */
 	private $filters = array();
 
@@ -128,12 +128,12 @@ final class FilterRegistry {
 		}
 
 		$this->filters[ $key ] = array(
-			'field'   => $field,
-			'type'    => $type,
-			'label'   => '' !== $label ? $label : $key,
-			'gap'     => 0.0,
-			'range'   => false,
-			'exclude' => false,
+			'field'  => $field,
+			'type'   => $type,
+			'label'  => '' !== $label ? $label : $key,
+			'gap'    => 0.0,
+			'range'  => false,
+			'negate' => false,
 		);
 	}
 
@@ -215,7 +215,7 @@ final class FilterRegistry {
 		$this->register( $key, $field, $type, $label );
 
 		if ( isset( $this->filters[ $key ] ) ) {
-			$this->filters[ $key ]['exclude'] = true;
+			$this->filters[ $key ]['negate'] = true;
 		}
 	}
 
@@ -264,7 +264,7 @@ final class FilterRegistry {
 	 * @since 0.10.0
 	 *
 	 * @param string $key Filter key.
-	 * @return array{field:string,type:string,label:string,gap:float,range:bool,exclude:bool}|null
+	 * @return array{field:string,type:string,label:string,gap:float,range:bool,negate:bool}|null
 	 */
 	public function definition_of( string $key ): ?array {
 		return $this->filters[ $key ] ?? null;
@@ -332,7 +332,7 @@ final class FilterRegistry {
 		$join   = 'and' === $mode ? ' AND ' : ' OR ';
 		$clause = $filter['field'] . ':(' . implode( $join, $rendered ) . ')';
 
-		if ( empty( $filter['exclude'] ) ) {
+		if ( empty( $filter['negate'] ) ) {
 			return $clause;
 		}
 
@@ -350,8 +350,8 @@ final class FilterRegistry {
 	 * appear under both "1100 to 1200" and "1200 to 1300", and the counts
 	 * beside those bands would not add up to the total.
 	 *
-	 * @param array{field:string,type:string,label:string,gap:float,range:bool,exclude:bool} $filter Filter definition.
-	 * @param array<int,scalar>                                                              $values Band lower bounds.
+	 * @param array{field:string,type:string,label:string,gap:float,range:bool,negate:bool} $filter Filter definition.
+	 * @param array<int,scalar>                                                             $values Band lower bounds.
 	 * @return string
 	 */
 	private function band_clause( array $filter, array $values ): string {
@@ -387,8 +387,8 @@ final class FilterRegistry {
 	 * because a half-understood price filter is worse than none: it would show
 	 * a shopper a filtered page that is not filtered.
 	 *
-	 * @param array{field:string,type:string,label:string,gap:float,range:bool,exclude:bool} $filter Filter definition.
-	 * @param array<int,scalar>                                                              $values Range expressions.
+	 * @param array{field:string,type:string,label:string,gap:float,range:bool,negate:bool} $filter Filter definition.
+	 * @param array<int,scalar>                                                             $values Range expressions.
 	 * @return string
 	 */
 	private function range_clause( array $filter, array $values ): string {

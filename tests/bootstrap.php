@@ -66,12 +66,47 @@ if ( $solrengine_with_wordpress ) {
 
 	require_once $solrengine_wp_tests . '/includes/functions.php';
 
+	/*
+	 * WooCommerce, when SOLRENGINE_TEST_WOOCOMMERCE names its directory.
+	 *
+	 * Optional so that the plain WordPress jobs keep proving the plugin works
+	 * without it. Loaded before SolrEngine, as a site's plugin order would, and
+	 * installed once the theme is set up — WooCommerce creates its tables and
+	 * roles there, the same way its own test suite does.
+	 */
+	$solrengine_woocommerce = getenv( 'SOLRENGINE_TEST_WOOCOMMERCE' );
+	$solrengine_woocommerce = is_string( $solrengine_woocommerce ) && '' !== $solrengine_woocommerce
+		? rtrim( $solrengine_woocommerce, '/\\' ) . '/woocommerce.php'
+		: '';
+
+	if ( '' !== $solrengine_woocommerce && ! is_readable( $solrengine_woocommerce ) ) {
+		fwrite( STDERR, "SOLRENGINE_TEST_WOOCOMMERCE is set, but {$solrengine_woocommerce} is not readable.\n" );
+		exit( 1 );
+	}
+
 	tests_add_filter(
 		'muplugins_loaded',
-		static function (): void {
+		static function () use ( $solrengine_woocommerce ): void {
+			if ( '' !== $solrengine_woocommerce ) {
+				require $solrengine_woocommerce;
+			}
+
 			require dirname( __DIR__ ) . '/solrengine.php';
 		}
 	);
+
+	if ( '' !== $solrengine_woocommerce ) {
+		tests_add_filter(
+			'setup_theme',
+			static function (): void {
+				\WC_Install::install();
+
+				// Roles are cached before WooCommerce adds its own.
+				$GLOBALS['wp_roles'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+				wp_roles();
+			}
+		);
+	}
 
 	require $solrengine_wp_tests . '/includes/bootstrap.php';
 }

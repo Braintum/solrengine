@@ -26,14 +26,14 @@ use SolrEngine\Contracts\Result;
  * Implementations must not throw, must not follow redirects, and must not
  * retry.
  *
- * @since 0.10.2
+ * @since 1.0.0
  */
 interface Sender {
 
 	/**
 	 * Send a request.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @param string               $method     HTTP method.
 	 * @param string               $url        Absolute URL, query string included.

@@ -21,14 +21,14 @@ use SolrEngine\Contracts\Suggestions;
  *
  * Pure: decoded JSON in, contracts out. No WordPress, no transport.
  *
- * @since 0.10.2
+ * @since 1.0.0
  */
 final class SuggestionParser {
 
 	/**
 	 * Read the documents out of a decoded suggest response.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @param array<string,mixed> $body    Decoded Solr response.
 	 * @param int                 $site_id Site the query was scoped to.

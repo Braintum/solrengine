@@ -45,6 +45,7 @@
 }
 
 .solrengine-filters__count {
+
 	/* Dimmed rather than hidden: the count is what makes a filter worth
 	   clicking, but it is not the label. */
 	opacity: 0.7;
@@ -63,6 +64,6 @@
 /* Focus visibility is not optional: this panel is operated with the keyboard by
    anyone who does not use a mouse, and the checkboxes are its only controls. */
 .solrengine-filters input:focus-visible {
-	outline: 2px solid currentColor;
+	outline: 2px solid currentcolor;
 	outline-offset: 2px;
 }

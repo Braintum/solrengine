@@ -23,14 +23,14 @@ namespace SolrEngine\Contracts;
  * be tested without WordPress — reading `get_option()` there was a leaked seam —
  * and so a process that must not write on a read can decline to.
  *
- * @since 0.10.2
+ * @since 1.0.0
  */
 interface Breaker {
 
 	/**
 	 * Whether calls should be skipped for now.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @return bool
 	 */
@@ -39,7 +39,7 @@ interface Breaker {
 	/**
 	 * Note that a call failed.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @param string $code Stable failure code from the backend.
 	 * @return void
@@ -49,7 +49,7 @@ interface Breaker {
 	/**
 	 * Note that a call succeeded.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @return void
 	 */

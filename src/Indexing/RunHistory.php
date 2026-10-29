@@ -219,12 +219,13 @@ final class RunHistory {
 
 		$table = Tables::runs();
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				// The table name comes from the trusted $wpdb prefix. Only the
-				// bound values below come from a caller.
-				"SELECT * FROM {$table} WHERE site_id = %d ORDER BY started_at DESC, id DESC LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				// %i, not interpolation: the table name is bound as an
+				// identifier, so it is quoted and escaped like any value.
+				'SELECT * FROM %i WHERE site_id = %d ORDER BY started_at DESC, id DESC LIMIT %d',
+				$table,
 				$this->site_id,
 				max( 1, min( 100, $limit ) )
 			),
@@ -254,10 +255,11 @@ final class RunHistory {
 		$limit = max( 1, min( 200, $limit ) );
 
 		if ( $run_id > 0 ) {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$rows = $wpdb->get_results(
 				$wpdb->prepare(
-					"SELECT * FROM {$table} WHERE run_id = %d AND site_id = %d ORDER BY id DESC LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					'SELECT * FROM %i WHERE run_id = %d AND site_id = %d ORDER BY id DESC LIMIT %d',
+					$table,
 					$run_id,
 					$this->site_id,
 					$limit
@@ -265,10 +267,11 @@ final class RunHistory {
 				ARRAY_A
 			);
 		} else {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$rows = $wpdb->get_results(
 				$wpdb->prepare(
-					"SELECT * FROM {$table} WHERE site_id = %d ORDER BY id DESC LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					'SELECT * FROM %i WHERE site_id = %d ORDER BY id DESC LIMIT %d',
+					$table,
 					$this->site_id,
 					$limit
 				),
@@ -297,10 +300,11 @@ final class RunHistory {
 		$fails = Tables::failures();
 		$keep  = max( 1, $keep );
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$cutoff = $wpdb->get_var(
 			$wpdb->prepare(
-				"SELECT id FROM {$runs} WHERE site_id = %d ORDER BY id DESC LIMIT 1 OFFSET %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				'SELECT id FROM %i WHERE site_id = %d ORDER BY id DESC LIMIT 1 OFFSET %d',
+				$runs,
 				$this->site_id,
 				$keep
 			)
@@ -313,19 +317,21 @@ final class RunHistory {
 		// Failures first. Deleting the runs first would orphan them, and an
 		// orphaned failure row has no timestamp anybody looks at, so it would
 		// stay in the table until the plugin was deleted.
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->query(
 			$wpdb->prepare(
-				"DELETE FROM {$fails} WHERE site_id = %d AND run_id <= %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				'DELETE FROM %i WHERE site_id = %d AND run_id <= %d',
+				$fails,
 				$this->site_id,
 				(int) $cutoff
 			)
 		);
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$removed = $wpdb->query(
 			$wpdb->prepare(
-				"DELETE FROM {$runs} WHERE site_id = %d AND id <= %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				'DELETE FROM %i WHERE site_id = %d AND id <= %d',
+				$runs,
 				$this->site_id,
 				(int) $cutoff
 			)

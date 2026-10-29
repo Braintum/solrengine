@@ -28,7 +28,7 @@ use SolrEngine\Support\Config;
  * a <template> per result card — and the script fills copies of them. See
  * templates/search-modal/result.php for the contract.
  *
- * @since 0.11.0
+ * @since 1.0.0
  */
 final class SearchModal {
 
@@ -65,7 +65,7 @@ final class SearchModal {
 	/**
 	 * Attach the hooks.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @return void
 	 */
@@ -83,7 +83,7 @@ final class SearchModal {
 	/**
 	 * Enqueue the script and style.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @return void
 	 */
@@ -144,7 +144,7 @@ final class SearchModal {
 	 * that removed it — or an asset build that is missing — does not leave an
 	 * inert dialog in the page.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @return void
 	 */
@@ -220,7 +220,7 @@ final class SearchModal {
 		 * Change the heading, tagline or placeholder, or opt in to the
 		 * "Powered by SolrEngine" line, without overriding the template.
 		 *
-		 * @since 0.11.0
+		 * @since 1.0.0
 		 *
 		 * @param array $args {
 		 *     @type string $heading     Text at the top left. The site name by default.
@@ -249,7 +249,7 @@ final class SearchModal {
 	 * sidebar — GeneratePress does, on `wp`. That is right for an embed in the
 	 * column and wrong for a popup over the whole site.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @return void
 	 */
@@ -267,7 +267,7 @@ final class SearchModal {
 	 * stylesheet, and neither theme.json nor a filter is trusted with arbitrary
 	 * CSS.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @return string The width, or '' when the theme does not say.
 	 */
@@ -306,7 +306,7 @@ final class SearchModal {
 		 * stylesheet's default. A theme can also set
 		 * `--solrengine-modal-width` in CSS, which wins over this.
 		 *
-		 * @since 0.11.0
+		 * @since 1.0.0
 		 *
 		 * @param string $width The theme's wide size, content size or
 		 *                      `$content_width`, as a CSS length, or ''.
@@ -354,7 +354,7 @@ final class SearchModal {
 			 * submit them are matched separately, through
 			 * `solrengine_instant_search_selector`.
 			 *
-			 * @since 0.11.0
+			 * @since 1.0.0
 			 *
 			 * @param string $selector A CSS selector.
 			 */

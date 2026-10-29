@@ -110,10 +110,7 @@ plugin's copy, then the `solrengine_template` filter.
   whole project, including `webpack.config.js`'s `@package` tag. Read the diff.
 - Write `' '` as a named constant; the formatter turns the escape into an
   invisible literal.
-- `filters.css` and `instant-search.css` have older stylelint findings
-  (publishing task P13). Do not add new ones; fix old ones when you touch them.
-  `npm run lint:css` also feeds the `.js` files to stylelint, so lint CSS files
-  by name until that script is fixed.
+- `npm run lint:css` lints the stylesheets and CI runs it. Keep it clean.
 
 ## Checks
 
@@ -127,7 +124,7 @@ Before calling a change done, run the full set:
 ```bash
 composer check                # phpcs, phpstan, unit tests, hooks --check, direct-access check
 npm run lint:js
-npx wp-scripts lint-style <changed .css files>
+npm run lint:css
 npm run build && git status assets/build   # rebuilt output is committed
 ```
 
@@ -145,20 +142,28 @@ Read the diff after `composer lint:fix`. `phpcbf` rewrites string literals.
 
 ## Before a release package
 
-Build in a scratch copy, never in the working tree's `vendor/`:
+From a clean checkout of the commit being released:
 
 ```bash
-rsync -a --exclude vendor --exclude node_modules ./ "$SCRATCH/solrengine/"
-cd "$SCRATCH/solrengine"
-composer install --no-dev --optimize-autoloader
-bash bin/build-release.sh                       # honours .distignore
-wp plugin check "$SCRATCH/solrengine/build/solrengine"
-php bin/check-version.php
+npm ci && npm run build                          # assets/build must match assets/src
+bash bin/build-release.sh                        # package, zip, sha256, manifest
+unzip -q build/solrengine-<version>.zip -d "$SCRATCH"
+wp plugin check "$SCRATCH/solrengine"            # no ignore-codes; expect 0 and 0
 ```
 
-The version number lives in three places (the `solrengine.php` header,
-`SOLRENGINE_VERSION` in `constants.php`, the `readme.txt` Stable tag) and `bin/check-version.php` holds
-them together. Bump the version only when the owner asks — that is a release
+`bin/build-release.sh` checks the versions, copies what `.distignore` allows,
+installs `vendor/` into the package from `composer.lock` with `--no-dev` (the
+working tree's `vendor/` is never copied), refuses a package with dev packages,
+hidden files or no `assets/build`, and unpacks the zip again to verify it file
+for file against the manifest. Building one commit twice gives the same
+checksum. It warns when the tree has uncommitted changes: do not release that
+zip. Entries in `.distignore` meant for the root only need a leading `/` —
+unanchored, `build` also dropped `assets/build`.
+
+The version number lives in the `solrengine.php` header, `SOLRENGINE_VERSION`
+in `constants.php`, the `readme.txt` Stable tag and `package.json`, and
+`bin/check-version.php` holds them together and requires a changelog entry for
+it. Bump the version only when the owner asks — that is a release
 task, not part of a feature.
 
 Do not upload, tag, or submit anything to WordPress.org without the owner's

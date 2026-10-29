@@ -3,18 +3,18 @@
  * Plugin Name:       SolrEngine
  * Plugin URI:        https://www.solrengine.com
  * Description:       Apache Solr powered search for WordPress. Faster, more relevant results, with WordPress search as an automatic fallback.
- * Version:           0.10.1
+ * Version:           1.0.0
  * Requires at least: 6.5
  * Requires PHP:      7.4
- * Author:            SolrEngine
- * Author URI:        https://www.solrengine.com
+ * Author:            Braintum
+ * Author URI:        https://www.braintum.com/
  * License:           GPLv2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       solrengine
  * Domain Path:       /languages
  *
  * SolrEngine - Apache Solr powered search for WordPress.
- * Copyright (C) 2026 SolrEngine
+ * Copyright (C) 2026 Braintum
  *
  * This program is free software; you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free Software
@@ -44,6 +44,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once __DIR__ . '/constants.php';
 
 define( 'SOLRENGINE_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
+
+/*
+ * Action Scheduler, bundled for background indexing.
+ *
+ * Required here, while this file loads, and not from solrengine_boot(). Action
+ * Scheduler joins its version negotiation on `plugins_loaded` at priorities 0
+ * and 1. Required from a callback already running on that hook at priority 10,
+ * it registered too late to ever initialise, so on a site with no other plugin
+ * bundling it every job silently went to WP-Cron instead.
+ *
+ * Requiring our copy adds it to the negotiation; it does not force it to win,
+ * so the copy that runs may belong to WooCommerce. Guarded on the PHP version,
+ * because this file must parse on PHP too old for Action Scheduler and reports
+ * that itself, and on the file being readable, because a broken or partial
+ * copy must not fatal the site: the queue then reports itself unavailable and
+ * SolrEngine falls back to WP-Cron.
+ */
+if ( version_compare( PHP_VERSION, SOLRENGINE_MIN_PHP, '>=' ) && is_readable( SOLRENGINE_PLUGIN_DIR . 'vendor/woocommerce/action-scheduler/action-scheduler.php' ) ) {
+	require_once SOLRENGINE_PLUGIN_DIR . 'vendor/woocommerce/action-scheduler/action-scheduler.php';
+}
 
 /**
  * Collect any unmet requirement.
@@ -133,19 +153,6 @@ function solrengine_boot() {
 
 	require_once SOLRENGINE_PLUGIN_DIR . 'vendor/autoload.php';
 
-	/*
-	 * Action Scheduler registers itself through a version negotiation, so the
-	 * copy that ends up running may belong to another plugin. Requiring our
-	 * bundled copy adds it to that negotiation; it does not force it to win.
-	 * Guarded because a broken or partial copy must not fatal the site: the
-	 * queue reports itself unavailable and SolrEngine falls back to WP-Cron.
-	 */
-	$solrengine_scheduler = SOLRENGINE_PLUGIN_DIR . 'vendor/woocommerce/action-scheduler/action-scheduler.php';
-
-	if ( is_readable( $solrengine_scheduler ) ) {
-		require_once $solrengine_scheduler;
-	}
-
 	\SolrEngine\Bootstrap::instance()->boot();
 }
 add_action( 'plugins_loaded', 'solrengine_boot' );
@@ -192,14 +199,25 @@ register_activation_hook( __FILE__, 'solrengine_activate' );
 /**
  * Deactivation.
  *
- * Stops scheduled work and leaves data alone. Removing data is uninstall's job,
- * because deactivation is routinely used for debugging.
+ * Stops queued work and leaves data alone. Removing data is uninstall's job,
+ * because deactivation is routinely used for debugging. See
+ * SolrEngine\Support\Lifecycle::deactivate() for what is stopped and why.
  *
  * @since 0.1.0
  *
  * @return void
  */
 function solrengine_deactivate() {
-	wp_clear_scheduled_hook( 'solrengine_reconcile' );
+	if ( solrengine_unmet_requirements() ) {
+		// The autoloader may be missing or this PHP too old to parse it. Clear
+		// the one recurring event by name and leave the rest.
+		wp_clear_scheduled_hook( 'solrengine_reconcile' );
+
+		return;
+	}
+
+	require_once SOLRENGINE_PLUGIN_DIR . 'vendor/autoload.php';
+
+	\SolrEngine\Support\Lifecycle::deactivate();
 }
 register_deactivation_hook( __FILE__, 'solrengine_deactivate' );

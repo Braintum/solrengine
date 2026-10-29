@@ -19,14 +19,14 @@ use SolrEngine\Contracts\Suggestions;
  *
  * Pure: contracts in, arrays out.
  *
- * @since 0.10.2
+ * @since 1.0.0
  */
 final class SuggestPayload {
 
 	/**
 	 * Render the response body.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @param Suggestions $suggestions Suggestions to render.
 	 * @return array<string,mixed>

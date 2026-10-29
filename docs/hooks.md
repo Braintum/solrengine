@@ -254,7 +254,7 @@ suggestion list and the search popup alike.
 
 ### `solrengine_search_modal_args`
 
-Filter · since 0.11.0 · `src/Integration/WordPress/SearchModal.php:233`
+Filter · since 1.0.0 · `src/Integration/WordPress/SearchModal.php:233`
 
 Filters what the search popup's template receives.
 
@@ -270,7 +270,7 @@ Change the heading, tagline or placeholder, or opt in to the
 
 ### `solrengine_search_modal_triggers`
 
-Filter · since 0.11.0 · `src/Integration/WordPress/SearchModal.php:361`
+Filter · since 1.0.0 · `src/Integration/WordPress/SearchModal.php:361`
 
 Filters which elements open the search popup when clicked.
 
@@ -285,7 +285,7 @@ submit them are matched separately, through
 
 ### `solrengine_search_modal_width`
 
-Filter · since 0.11.0 · `src/Integration/WordPress/SearchModal.php:314`
+Filter · since 1.0.0 · `src/Integration/WordPress/SearchModal.php:314`
 
 Filters the width the search popup grows to.
 
@@ -319,7 +319,7 @@ posts_pre_query, or where one search form should stay on WordPress.
 
 ### `solrengine_template`
 
-Filter · since 0.11.0 · `src/Integration/WordPress/Templates.php:75`
+Filter · since 1.0.0 · `src/Integration/WordPress/Templates.php:75`
 
 Filters the file a SolrEngine template resolves to.
 

@@ -32,7 +32,7 @@ a seam has leaked and the fix belongs in the code, not the test.
 | `composer check` | Lint, analyse and unit tests |
 | `SOLRENGINE_A11Y_URL=… npm run test:a11y` | Keyboard and axe-core audit of the search popup on a running site; see `tests/a11y/search-modal.js` |
 | `php bin/check-version.php` | Verify the header, constant and readme agree |
-| `bash bin/build-release.sh` | Build the distributable into `build/solrengine` |
+| `bash bin/build-release.sh` | Build the release package, zip, checksum and manifest into `build/`; see [Release package](#release-package) |
 
 ### Why `composer.json` pins a platform
 
@@ -107,6 +107,40 @@ every commit where someone remembered to start Docker.
 If a change to the WordPress layer cannot be made without teaching the memory
 backend some Solr vocabulary, the abstraction has leaked and that is the alarm.
 
+## Release package
+
+```bash
+npm ci && npm run build
+bash bin/build-release.sh
+```
+
+Produces, in `build/`:
+
+| | |
+| --- | --- |
+| `solrengine/` | The package, as WordPress.org will unpack it |
+| `solrengine-<version>.zip` | The package, with one root directory, `solrengine/` |
+| `solrengine-<version>.zip.sha256` | Its checksum, in `sha256sum -c` format |
+| `solrengine-<version>.manifest.txt` | The commit, whether the tree was clean, the `composer.lock` checksum, and a checksum for every file |
+
+What ships is decided by `.distignore`. `vendor/` is never copied from the
+working tree: the script installs it into the package from `composer.lock` with
+`--no-dev`, then refuses the package if Composer's own record lists a
+development package. It also refuses hidden files, development directories and
+a missing `assets/build` — which it does not rebuild, so build the assets first.
+
+Every entry gets the last commit's timestamp and a fixed mode, and the zip lists
+files in byte order, so two builds of one commit have the same checksum. Set
+`SOURCE_DATE_EPOCH` to override the timestamp.
+
+Finally it unpacks the zip into a temporary directory, checks every file against
+the manifest, and lints every PHP file in it. CI runs the script and Plugin
+Check against the result, strictly, and keeps the zip, checksum and manifest as
+the `solrengine-package` artifact of the run.
+
+Build a release from a clean checkout. The script warns when the working tree
+has uncommitted changes, and the manifest records it.
+
 ## Solr for backend tests
 
 ```bash
@@ -132,11 +166,21 @@ and 9.10 as the last supported 9.x. See ADR-011.
 WooCommerce CRUD — a variable product's price range, an attribute's terms, a
 hidden product's refusal — none of which can be faked convincingly.
 
-It skips unless WooCommerce is loaded, which the test library does not do on
-its own. To run it, install WooCommerce into the WordPress test library's
-plugin directory and require its entry point alongside the plugin in
-`tests/bootstrap.php`. That is not wired into CI yet, so the suite is currently
-green by skipping there.
+It skips unless WooCommerce is loaded. Point `SOLRENGINE_TEST_WOOCOMMERCE` at
+an unpacked WooCommerce directory and `tests/bootstrap.php` loads it before
+SolrEngine and installs it:
+
+```bash
+curl -sSfL https://downloads.wordpress.org/plugin/woocommerce.latest-stable.zip -o /tmp/wc.zip
+unzip -q /tmp/wc.zip -d /tmp
+SOLRENGINE_TEST_SUITE=integration SOLRENGINE_TEST_WOOCOMMERCE=/tmp/woocommerce \
+  vendor/bin/phpunit --testsuite integration --fail-on-skipped
+```
+
+CI runs this in its own job against the current WooCommerce and the previous
+minor (`bin/woocommerce-version.php` resolves both), with `--fail-on-skipped`,
+so a product test cannot pass by not running. The plain integration jobs keep
+running without WooCommerce, and skip those seven tests by design.
 
 ### Fixtures share one collection
 

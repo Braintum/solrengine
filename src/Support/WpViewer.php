@@ -14,7 +14,7 @@ use SolrEngine\Contracts\Viewer;
  *
  * The answer for every request, all of which go through a full boot.
  *
- * @since 0.10.2
+ * @since 1.0.0
  */
 final class WpViewer implements Viewer {
 

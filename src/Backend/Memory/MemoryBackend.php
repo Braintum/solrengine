@@ -628,7 +628,7 @@ final class MemoryBackend implements SearchBackend, IndexBackend, SchemaBackend,
 
 		// An excluding filter removes matches rather than requiring them, and
 		// therefore also keeps every document that does not carry the field.
-		return empty( $definition['exclude'] ) ? $satisfied : ! $satisfied;
+		return empty( $definition['negate'] ) ? $satisfied : ! $satisfied;
 	}
 
 	/**

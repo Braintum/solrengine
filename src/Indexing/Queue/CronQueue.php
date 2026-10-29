@@ -82,7 +82,10 @@ final class CronQueue implements JobQueue {
 	 */
 	public function cancel( string $hook, array $args = array() ): Result {
 		if ( array() === $args ) {
-			wp_clear_scheduled_hook( $hook );
+			// wp_unschedule_hook(), not wp_clear_scheduled_hook(): the latter
+			// matches only events scheduled with no arguments, and an index job
+			// always carries its batch. The contract promises every job.
+			wp_unschedule_hook( $hook );
 
 			return Result::success();
 		}

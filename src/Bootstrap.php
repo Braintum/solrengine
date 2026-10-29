@@ -225,7 +225,7 @@ final class Bootstrap {
 	 *
 	 * Safe to call more than once.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @return Container
 	 */

@@ -20,7 +20,7 @@ namespace SolrEngine\Integration\WordPress;
  * from a post type, and a path assembled from data is a path that should be
  * proven harmless rather than assumed so.
  *
- * @since 0.11.0
+ * @since 1.0.0
  */
 final class Templates {
 
@@ -41,7 +41,7 @@ final class Templates {
 	/**
 	 * The file a template name resolves to.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @param string $name Relative path, such as "search-modal/result.php".
 	 * @return string Absolute path, or '' when there is no such template.
@@ -67,7 +67,7 @@ final class Templates {
 		 * suppress a template altogether — a per-post-type card, for instance,
 		 * so that type falls back to the default card.
 		 *
-		 * @since 0.11.0
+		 * @since 1.0.0
 		 *
 		 * @param string $path Absolute path found, or '' when none was.
 		 * @param string $name Relative template name.
@@ -84,7 +84,7 @@ final class Templates {
 	 * loaded by `get_template_part()` does, and the theme's globals are in
 	 * scope as a theme author expects.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @param string              $name Relative template name.
 	 * @param array<string,mixed> $args Values the template may read as `$args`.

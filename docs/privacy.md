@@ -46,6 +46,14 @@ those in a future commercial tier specifically so that the free plugin does not
 collect them by default. The run history records what was *indexed* and what
 failed — post IDs and error messages — never what anybody searched for.
 
+That includes the debug log. With debug logging on (`WP_DEBUG` and
+`WP_DEBUG_LOG`, or the `runtime.debug` setting), each Solr request is logged
+with its method, address, timing and status, and with the *names* of its query
+parameters only — `select?q&rows&wt`, never `q=what someone typed`. The values
+never reach the logger, so there is nothing to scrub afterwards.
+`tests/Integration/LogPrivacyTest.php` sends a marker through a search and fails
+if it appears anywhere in what was logged.
+
 Search requests are cached for a few minutes, keyed by a hash of the query. The
 cache holds results, not who asked.
 
@@ -58,7 +66,19 @@ cache holds results, not who asked.
 | The last fifty indexing runs and their failures | Two custom tables, pruned automatically |
 | The list of custom field keys your site uses | A transient, for an hour |
 
-Uninstalling the plugin removes all of it. It deliberately does **not** delete
+Uninstalling the plugin removes all of it, on every site of a network: options,
+transients, the two tables, and any indexing job still queued, whether in WP-Cron
+or in Action Scheduler. Queued jobs are cancelled by the plugin's own hooks and
+its own Action Scheduler group; Action Scheduler's tables are shared with
+WooCommerce and others, and are left in place. `tests/Integration/LifecycleTest.php`
+checks each of these.
+
+Deactivating removes nothing you would miss. It stops queued indexing jobs —
+they could not run with the plugin off — and marks an unfinished full index as
+stalled, so that after reactivating you can resume it from where it stopped.
+Settings, credentials, history and the index are kept.
+
+Uninstalling deliberately does **not** delete
 your documents from Solr: that index is on your infrastructure, the server may be
 unreachable at that moment, and deleting someone's data from a remote server
 during an uninstall is not a decision an uninstall script should make silently.

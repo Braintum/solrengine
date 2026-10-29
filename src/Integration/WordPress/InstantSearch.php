@@ -61,7 +61,7 @@ final class InstantSearch {
 	 *
 	 * Shared with the search popup, which opens from the same fields.
 	 *
-	 * @since 0.11.0
+	 * @since 1.0.0
 	 *
 	 * @return string
 	 */

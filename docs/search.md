@@ -238,7 +238,7 @@ prefix expands to most of the term dictionary. The rule lives in
 ## Completing a search query
 
 A `SearchQuery` can ask for the same treatment with `with_completion()` (since
-0.11.0). Every search a visitor types asks for it: the search popup, the results
+1.0.0). Every search a visitor types asks for it: the search popup, the results
 page, the filter panel's counts beside it, and WooCommerce's product search. The
 last word is then matched as a prefix, so "hoo" finds "Hoodie", and every other
 word still has to match as written. The popup and the page therefore agree: what

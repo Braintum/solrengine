@@ -4,6 +4,10 @@ What SolrEngine defends against, how, and — as importantly — what each
 mitigation does **not** cover. A security document that lists only strengths
 misleads the person it is written for.
 
+**Found a vulnerability?** Report it privately through
+[GitHub's private vulnerability reporting](https://github.com/Braintum/solrengine/security/advisories/new),
+not in a public issue or forum topic. See [SECURITY.md](../SECURITY.md).
+
 ## Server-side request forgery
 
 **The risk.** An administrator types a URL and the server fetches it. That is

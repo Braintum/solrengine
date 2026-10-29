@@ -18,7 +18,7 @@ use SolrEngine\Contracts\Logger;
  * every search. Deleted rather than reset on success, so a healthy site carries
  * no row at all.
  *
- * @since 0.10.2
+ * @since 1.0.0
  */
 final class OptionBreaker implements Breaker {
 

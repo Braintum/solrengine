@@ -283,7 +283,7 @@ final class HttpTransport {
 				'Solr request failed',
 				array(
 					'method' => $method,
-					'url'    => $url,
+					'url'    => self::loggable_url( $url ),
 					'error'  => $sent->message(),
 					'ms'     => $elapsed,
 				)
@@ -344,13 +344,58 @@ final class HttpTransport {
 			'Solr request',
 			array(
 				'method' => $method,
-				'url'    => $url,
+				'url'    => self::loggable_url( $url ),
 				'status' => $status,
 				'ms'     => $elapsed,
 			)
 		);
 
 		return Result::success( is_array( $decoded ) ? $decoded : array() );
+	}
+
+	/**
+	 * A request URL as it may appear in a log.
+	 *
+	 * Scheme, host, port and path, then the names of the query parameters
+	 * without their values. A search request carries what a visitor typed in
+	 * `q`, and search text can be personal data: a name, an address, a medical
+	 * condition. It must not outlive the request in a debug log, so the values
+	 * never reach the logger at all rather than being scrubbed afterwards. The
+	 * names are kept because "which handler, with which parameters" is what a
+	 * person debugging a failed request actually needs.
+	 *
+	 * Credentials embedded in the URL are dropped with the rest of the
+	 * authority's user information.
+	 *
+	 * @param string $url Absolute URL, query string included.
+	 * @return string
+	 */
+	private static function loggable_url( string $url ): string {
+		$parts = parse_url( $url ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- See EndpointValidator: the wrapper only patched a PHP bug fixed long before 7.4.
+
+		if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
+			return '[unparseable url]';
+		}
+
+		$logged = ( $parts['scheme'] ?? 'http' ) . '://' . $parts['host']
+			. ( isset( $parts['port'] ) ? ':' . $parts['port'] : '' )
+			. ( $parts['path'] ?? '' );
+
+		if ( empty( $parts['query'] ) ) {
+			return $logged;
+		}
+
+		$names = array();
+
+		foreach ( explode( '&', $parts['query'] ) as $pair ) {
+			$name = rawurldecode( explode( '=', $pair, 2 )[0] );
+
+			if ( '' !== $name ) {
+				$names[ $name ] = true;
+			}
+		}
+
+		return $logged . '?' . implode( '&', array_keys( $names ) );
 	}
 
 	/**

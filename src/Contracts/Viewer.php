@@ -20,7 +20,7 @@ namespace SolrEngine\Contracts;
  * leak — and unusable in a process where the user stack is not loaded, which is
  * exactly the process instant-search runs in.
  *
- * @since 0.10.2
+ * @since 1.0.0
  */
 interface Viewer {
 
@@ -31,7 +31,7 @@ interface Viewer {
 	 * in fact signed in risks caching their view for everyone; answering true
 	 * for an anonymous visitor only forgoes a cache entry.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @return bool
 	 */

@@ -16,7 +16,7 @@ use SolrEngine\Contracts\Result;
  * settings and transport overrides all apply to Solr traffic, which is what an
  * administrator expects of a plugin's outbound requests.
  *
- * @since 0.10.2
+ * @since 1.0.0
  */
 final class WpHttpSender implements Sender {
 
@@ -27,7 +27,7 @@ final class WpHttpSender implements Sender {
 	 * `SHORTINIT` boot. Requests then fail with a stable code rather than a
 	 * fatal error.
 	 *
-	 * @since 0.10.2
+	 * @since 1.0.0
 	 *
 	 * @return bool
 	 */

@@ -12,7 +12,13 @@
 
 # The package directory itself. Without this, rsync copies the destination
 # into the destination and the zip contains a partial copy of itself.
-build
+#
+# Anchored with the leading slash. Unanchored, rsync matches every directory
+# named build at any depth — assets/build included — and the package shipped
+# with no compiled JavaScript or CSS: no autocomplete, no popup, no filter
+# panel, and nothing saying so, because each of those quietly stays off when its
+# build is missing. build-release.sh now refuses a package without it.
+/build
 
 # Development tooling.
 #
@@ -46,6 +52,7 @@ README.md
 # release, and Plugin Check refuses unexpected markdown in the plugin root.
 AGENTS.md
 CLAUDE.md
+SECURITY.md
 assets/src
 assets/README.md
 # Placeholders that exist so git tracks an otherwise empty directory. They have

@@ -135,7 +135,7 @@ for where its latency goes.
 
 ## `GET /instant`
 
-Since 0.11.0. What the [search popup](search-modal.md) shows: a count per
+Since 1.0.0. What the [search popup](search-modal.md) shows: a count per
 content type, and either one short section per type (All) or a page of 24
 results from one type.
 

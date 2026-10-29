@@ -17,7 +17,7 @@ use SolrEngine\Contracts\Cache;
  * theme asks for a count and then for the rows. With Redis or Memcached behind
  * it, entries outlive the request and several visitors share one Solr query.
  *
- * @since 0.10.2
+ * @since 1.0.0
  */
 final class ObjectCache implements Cache {
 
